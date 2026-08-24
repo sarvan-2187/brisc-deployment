@@ -1,0 +1,7 @@
+streamlit
+torch
+torchvision
+timm
+segmentation-models-pytorch
+pillow
+numpy
