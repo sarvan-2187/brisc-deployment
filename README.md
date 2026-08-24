@@ -42,17 +42,40 @@ if the SoC gets hot, and reports whether throttling occurred):
 python benchmark.py
 ```
 
-### Measured on a Raspberry Pi 4 (4GB, EfficientNetB0 + DeepLabV3+, CPU-only)
+### Measured on a Raspberry Pi 4 (4GB, CPU-only)
 
-| Stage | Latency |
+Individual models:
+
+| Model | Latency |
 |---|---|
-| Classification | ~0.29 s |
-| Segmentation | ~1.0 s |
-| Full pipeline | ~1.28 s |
+| Classifier: EfficientNetB0 | ~282 ms |
+| Classifier: MobileNetV3 | ~189 ms |
+| Segmenter: DeepLabV3+ | ~1008 ms |
+| Segmenter: UNet | ~927 ms |
 
-SoC temperature rose 46.7C -> 56.0C over a 10-run benchmark with no
-throttling (peak RSS ~552 MB for the benchmark process alone). Comfortably
-within the 4GB/32GB budget — see `benchmark.py` to reproduce or re-check
-after any dependency/model changes.
+All 4 classifier + segmenter combinations (full pipeline):
+
+| Combination | Full pipeline |
+|---|---|
+| EfficientNetB0 + DeepLabV3+ (app default) | ~1296 ms |
+| EfficientNetB0 + UNet | ~1204 ms |
+| MobileNetV3 + DeepLabV3+ | ~1196 ms |
+| MobileNetV3 + UNet | ~1115 ms |
+
+Note: checkpoint file size doesn't predict latency here — UNet (93.4 MB) is
+faster than DeepLabV3+ (85.8 MB) on this hardware, since DeepLabV3+'s ASPP
+decoder is more compute-heavy per-FLOP than UNet's simpler decoder. The
+app's default pair (EfficientNetB0 + DeepLabV3+) is kept for best reported
+accuracy (99.2% classification F1, 76.3% segmentation mIoU) even though
+it's the slowest of the 4 on this device; MobileNetV3 + UNet is ~14%
+faster with nearly identical segmentation accuracy (75.7% mIoU) but a real
+drop in classification accuracy (94.5% F1). Switch the default in
+`app.py`'s Advanced Settings if latency matters more than accuracy for
+your use case.
+
+SoC temperature rose 44.3C -> 55.0C over the full benchmark with no
+throttling (peak RSS ~676 MB with all 4 models loaded simultaneously).
+Comfortably within the 4GB/32GB budget — see `benchmark.py` to reproduce or
+re-check after any dependency/model changes.
 
 Source project / training notebook: https://github.com/sarvan-2187/brain-tumor-edge
