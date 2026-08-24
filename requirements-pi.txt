@@ -1,0 +1,16 @@
+# Raspberry Pi / ARM CPU-only install. Pulls torch/torchvision from the
+# PyTorch CPU wheel index so pip doesn't drag in nvidia-cuda-*/cublas/cudnn
+# packages that are irrelevant (and largely unusable) on Pi hardware.
+#
+# Usage: pip install -r requirements-pi.txt
+
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch
+torchvision
+streamlit
+timm
+segmentation-models-pytorch
+pillow
+numpy
+fpdf2
+matplotlib
