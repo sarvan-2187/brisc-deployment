@@ -11,6 +11,7 @@ from pathlib import Path
 
 import segmentation_models_pytorch as smp
 import streamlit as st
+import streamlit.components.v1 as components
 import timm
 import torch
 import torch.nn as nn
@@ -138,8 +139,23 @@ if "image_bytes" not in st.session_state:
     st.session_state.image_bytes = None
 if "last_upload_id" not in st.session_state:
     st.session_state.last_upload_id = None
+if "just_selected" not in st.session_state:
+    st.session_state.just_selected = False
 
-with st.expander("Try a demo image"):
+
+def _scroll_to_results():
+    components.html(
+        """
+        <script>
+        const el = window.parent.document.getElementById('results-anchor');
+        if (el) { el.scrollIntoView({behavior: 'smooth', block: 'start'}); }
+        </script>
+        """,
+        height=0,
+    )
+
+
+with st.expander("Try a demo image", expanded=(st.session_state.image_bytes is None)):
     demo_images = list_demo_images()
     tabs = st.tabs([c.replace("_", " ").title() for c in demo_images])
     for tab, (cls_name, paths) in zip(tabs, demo_images.items()):
@@ -150,6 +166,7 @@ with st.expander("Try a demo image"):
                     st.image(str(path), width="stretch")
                     if st.button("Use this image", key=f"use_{path.name}"):
                         st.session_state.image_bytes = path.read_bytes()
+                        st.session_state.just_selected = True
 
 uploaded = st.file_uploader("Or upload your own MRI slice (jpg/png)", type=["jpg", "jpeg", "png"])
 if uploaded is not None:
@@ -157,6 +174,7 @@ if uploaded is not None:
     if upload_id != st.session_state.last_upload_id:
         st.session_state.image_bytes = uploaded.getvalue()
         st.session_state.last_upload_id = upload_id
+        st.session_state.just_selected = True
 
 with st.expander("Advanced settings"):
     classifier_name = st.selectbox("Classifier", CLASSIFIER_CHOICES)
@@ -164,6 +182,11 @@ with st.expander("Advanced settings"):
     threshold = st.slider("Confidence threshold for running segmentation", 0.50, 0.95, 0.70, 0.05)
 
 if st.session_state.image_bytes is not None:
+    st.markdown('<div id="results-anchor"></div>', unsafe_allow_html=True)
+    if st.session_state.just_selected:
+        _scroll_to_results()
+        st.session_state.just_selected = False
+
     image = Image.open(io.BytesIO(st.session_state.image_bytes)).convert("RGB")
 
     result = run_pipeline(st.session_state.image_bytes, classifier_name, segmenter_name, threshold)
