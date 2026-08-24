@@ -106,16 +106,48 @@ def run_pipeline(image_bytes, classifier_name, segmenter_name, threshold):
     }
 
 
-st.set_page_config(page_title="BRISC Brain Tumor MRI", page_icon="🧠", layout="centered")
-st.title("🧠 Brain Tumor MRI Analysis")
-st.caption("Upload or pick an MRI slice — the app classifies it and segments the tumor automatically.")
+st.set_page_config(page_title="BRISC Brain Tumor MRI", layout="centered")
+
+st.markdown(
+    """
+    <style>
+    @import url('https://cdn.jsdelivr.net/npm/@fontsource/geist@5/index.css');
+    @import url('https://cdn.jsdelivr.net/npm/@fontsource/geist@5/500.css');
+    @import url('https://cdn.jsdelivr.net/npm/@fontsource/geist@5/600.css');
+
+    html, body, [class*="css"] {
+        font-family: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+
+    #MainMenu, footer, header {visibility: hidden;}
+
+    .block-container {
+        padding-top: 3rem;
+        max-width: 760px;
+    }
+
+    h1 {
+        font-weight: 600;
+        letter-spacing: -0.02em;
+    }
+
+    div[data-testid="stMetricValue"] {
+        font-weight: 600;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+st.title("Brain Tumor MRI Analysis")
+st.caption("Upload or select an MRI slice. The system classifies it and segments the tumor automatically.")
 
 if "image_bytes" not in st.session_state:
     st.session_state.image_bytes = None
 if "last_upload_id" not in st.session_state:
     st.session_state.last_upload_id = None
 
-with st.expander("🖼️ Try a demo image"):
+with st.expander("Try a demo image"):
     demo_images = list_demo_images()
     tabs = st.tabs([c.replace("_", " ").title() for c in demo_images])
     for tab, (cls_name, paths) in zip(tabs, demo_images.items()):
@@ -134,7 +166,7 @@ if uploaded is not None:
         st.session_state.image_bytes = uploaded.getvalue()
         st.session_state.last_upload_id = upload_id
 
-with st.expander("⚙️ Advanced settings"):
+with st.expander("Advanced settings"):
     classifier_name = st.selectbox("Classifier", CLASSIFIER_CHOICES)
     segmenter_name = st.selectbox("Segmenter", SEGMENTER_CHOICES)
     threshold = st.slider("Confidence threshold for running segmentation", 0.50, 0.95, 0.70, 0.05)
@@ -148,12 +180,12 @@ if st.session_state.image_bytes is not None:
     mask = result["mask"]
 
     if verdict_kind == "tumor":
-        st.error(f"🔴 Tumor detected: **{top_class.title()}** — {top_conf:.1%} confidence")
+        st.error(f"Tumor detected: **{top_class.title()}** — {top_conf:.1%} confidence")
     elif verdict_kind == "no_tumor":
-        st.success(f"🟢 No tumor detected — {top_conf:.1%} confidence")
+        st.success(f"No tumor detected — {top_conf:.1%} confidence")
     else:
         st.warning(
-            f"🟡 Uncertain: top prediction **{top_class.title()}** at {top_conf:.1%}, "
+            f"Uncertain: top prediction **{top_class.title()}** at {top_conf:.1%}, "
             f"below the {threshold:.0%} threshold. Segmentation skipped — clinical review recommended."
         )
 
@@ -174,7 +206,7 @@ if st.session_state.image_bytes is not None:
         mask, classifier_name, segmenter_name if mask is not None else None, threshold,
     )
     st.download_button(
-        "📄 Download PDF report", data=pdf_bytes,
+        "Download PDF report", data=pdf_bytes,
         file_name="brain_tumor_report.pdf", mime="application/pdf",
     )
 else:
