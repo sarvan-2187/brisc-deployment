@@ -127,6 +127,11 @@ st.markdown(
     div[data-testid="stMetricValue"] {
         font-weight: 600;
     }
+
+    div[data-testid="stVegaLiteChart"], div[data-testid="stArrowVegaLiteChart"] {
+        overflow: visible !important;
+        width: 100% !important;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -214,7 +219,10 @@ if st.session_state.image_bytes is not None:
         st.metric("Tumor area", f"{mask.mean():.1%} of frame")
 
     st.subheader("Classification confidence")
-    st.bar_chart({"confidence": dict(zip(CLASS_NAMES, result["probs"].tolist()))})
+    st.bar_chart(
+        {"confidence": dict(zip(CLASS_NAMES, result["probs"].tolist()))},
+        width="stretch",
+    )
 
     pdf_bytes = build_pdf_report(
         image, verdict_kind, top_class, top_conf, result["probs"], CLASS_NAMES,
