@@ -5,3 +5,5 @@ timm
 segmentation-models-pytorch
 pillow
 numpy
+fpdf2
+matplotlib
