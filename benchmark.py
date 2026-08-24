@@ -52,14 +52,14 @@ def load_cls_model(name):
     else:
         m = mobilenet_v3_large(weights=None)
         m.classifier[-1] = nn.Linear(m.classifier[-1].in_features, len(CLASS_NAMES))
-    m.load_state_dict(torch.load(CKPT_DIR / f"{name}_best.pt", map_location=DEVICE))
+    m.load_state_dict(torch.load(CKPT_DIR / f"{name}_best.pt", map_location=DEVICE, weights_only=False))
     return m.to(DEVICE).eval()
 
 
 def load_seg_model(name):
     cls = smp.Unet if name == "unet" else smp.DeepLabV3Plus
     m = cls(encoder_name="resnet34", encoder_weights=None, in_channels=3, classes=1)
-    m.load_state_dict(torch.load(CKPT_DIR / f"{name}_best.pt", map_location=DEVICE))
+    m.load_state_dict(torch.load(CKPT_DIR / f"{name}_best.pt", map_location=DEVICE, weights_only=False))
     return m.to(DEVICE).eval()
 
 
