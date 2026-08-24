@@ -111,21 +111,6 @@ st.set_page_config(page_title="BRISC Brain Tumor MRI", layout="centered")
 st.markdown(
     """
     <style>
-    @import url('https://cdn.jsdelivr.net/npm/@fontsource/geist@5/index.css');
-    @import url('https://cdn.jsdelivr.net/npm/@fontsource/geist@5/500.css');
-    @import url('https://cdn.jsdelivr.net/npm/@fontsource/geist@5/600.css');
-
-    html, body, p, span, div, label, li, a, h1, h2, h3, h4, h5, h6,
-    button, input, textarea, select, [class*="st-"] {
-        font-family: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
-    }
-
-    /* Streamlit renders its chevrons/close icons via icon-ligature fonts;
-       don't let the rule above turn those into literal text. */
-    [data-testid="stIconMaterial"], [class*="material-symbols"], [class*="material-icons"] {
-        font-family: initial !important;
-    }
-
     #MainMenu, footer, header {visibility: hidden;}
 
     .block-container {

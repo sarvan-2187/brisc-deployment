@@ -1,0 +1,21 @@
+[theme]
+base = "dark"
+font = "Geist"
+
+[[theme.fontFaces]]
+family = "Geist"
+url = "https://cdn.jsdelivr.net/npm/@fontsource/geist@5/files/geist-latin-400-normal.woff2"
+weight = 400
+style = "normal"
+
+[[theme.fontFaces]]
+family = "Geist"
+url = "https://cdn.jsdelivr.net/npm/@fontsource/geist@5/files/geist-latin-500-normal.woff2"
+weight = 500
+style = "normal"
+
+[[theme.fontFaces]]
+family = "Geist"
+url = "https://cdn.jsdelivr.net/npm/@fontsource/geist@5/files/geist-latin-600-normal.woff2"
+weight = 600
+style = "normal"
