@@ -5,6 +5,5 @@ timm
 segmentation-models-pytorch
 pillow
 numpy
-pandas
 fpdf2
 matplotlib

@@ -1,10 +1,5 @@
 """PDF report generation for BRISC pipeline results. No Streamlit/torch deps
 so it can be smoke-tested standalone (see __main__ below).
-
-A "combo" is one (classifier, segmenter) pipeline run: classification is
-independent per classifier; segmentation (if the classifier's verdict gates
-it on) is independent per segmenter. The report covers all 4 combinations,
-one page each, followed by a consolidated summary page.
 """
 
 import io
@@ -43,36 +38,6 @@ def display_name(model_key):
     return MODEL_DISPLAY_NAMES.get(model_key, model_key)
 
 
-def summarize_classifiers(combos):
-    """One representative result per classifier_name, in first-seen order."""
-    seen = {}
-    for c in combos:
-        seen.setdefault(c["classifier_name"], c)
-    return list(seen.values())
-
-
-def describe_consensus(cls_results):
-    """cls_results: the 2 unique per-classifier dicts from summarize_classifiers."""
-    a, b = cls_results[0], cls_results[1]
-    agree = a["top_class"] == b["top_class"]
-    if agree:
-        text = (
-            f"Both classifiers agree: predicted class is "
-            f"{a['top_class'].replace('_', ' ').title()} "
-            f"({display_name(a['classifier_name'])}: {a['top_conf']:.1%}, "
-            f"{display_name(b['classifier_name'])}: {b['top_conf']:.1%})."
-        )
-    else:
-        text = (
-            f"Classifiers disagree. {display_name(a['classifier_name'])} predicts "
-            f"{a['top_class'].replace('_', ' ').title()} ({a['top_conf']:.1%}); "
-            f"{display_name(b['classifier_name'])} predicts "
-            f"{b['top_class'].replace('_', ' ').title()} ({b['top_conf']:.1%}). "
-            f"Review all combinations for detail."
-        )
-    return agree, text
-
-
 def overlay_mask(image, mask):
     size = mask.shape[::-1]
     base = np.array(image.resize(size).convert("RGB")).astype(np.float32)
@@ -90,30 +55,6 @@ def _confidence_chart(probs, class_names):
     ax.set_ylim(0, 100)
     for i, p in enumerate(probs * 100):
         ax.text(i, p + 2, f"{p:.1f}%", ha="center", fontsize=8)
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-    fig.tight_layout()
-    buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=150)
-    plt.close(fig)
-    buf.seek(0)
-    return Image.open(buf)
-
-
-def _comparison_chart(cls_results, class_names):
-    fig, ax = plt.subplots(figsize=(5.8, 2.8))
-    x = np.arange(len(class_names))
-    width = 0.35
-    colors = ["#2c3e50", "#2980b9"]
-    for i, c in enumerate(cls_results):
-        offset = (i - (len(cls_results) - 1) / 2) * width
-        ax.bar(x + offset, c["probs"] * 100, width,
-               label=display_name(c["classifier_name"]), color=colors[i % len(colors)])
-    ax.set_xticks(x)
-    ax.set_xticklabels([n.replace("_", " ").title() for n in class_names])
-    ax.set_ylabel("Confidence (%)")
-    ax.set_ylim(0, 100)
-    ax.legend(fontsize=8, frameon=False)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     fig.tight_layout()
@@ -201,25 +142,34 @@ def _image_row(pdf, image, mask):
     pdf.set_y(y0 + img_w + 14)
 
 
-def _combo_page(pdf, index, total, combo, class_names, threshold):
-    clf_label = display_name(combo["classifier_name"])
-    seg_label = display_name(combo["segmenter_name"])
+def build_pdf_report(image, verdict_kind, top_class, top_conf, probs, class_names,
+                      mask, classifier_name, segmenter_name, threshold):
+    """Returns the report as PDF bytes.
 
+    mask=None means segmentation didn't run (no_tumor verdict, or uncertain
+    classification below threshold); segmenter_name is ignored in that case.
+    """
+    clf_label = display_name(classifier_name)
+    seg_label = display_name(segmenter_name) if segmenter_name else None
+
+    pdf = ReportPDF(unit="mm", format="A4")
+    pdf.alias_nb_pages()
+    pdf.set_auto_page_break(auto=True, margin=20)
     pdf.add_page()
-    _section_title(pdf, f"Combination {index} of {total}: {clf_label} + {seg_label}")
 
-    _image_row(pdf, combo["image"], combo["mask"])
-    _verdict_box(pdf, combo["verdict_kind"], combo["top_class"], combo["top_conf"])
+    _section_title(pdf, "Brain Tumor MRI Analysis Report")
+    _image_row(pdf, image, mask)
+    _verdict_box(pdf, verdict_kind, top_class, top_conf)
 
     _subheading(pdf, "Classification confidence")
-    chart = _confidence_chart(np.asarray(combo["probs"]), class_names)
+    chart = _confidence_chart(np.asarray(probs), class_names)
     pdf.image(chart, x=10, w=140)
     pdf.ln(4)
 
-    if combo["mask"] is not None:
+    if mask is not None:
         _subheading(pdf, "Tumor metrics")
-        tumor_px = int(combo["mask"].sum())
-        frame_px = int(combo["mask"].size)
+        tumor_px = int(mask.sum())
+        frame_px = int(mask.size)
         _kv_table(pdf, [
             ("Tumor area", f"{100 * tumor_px / frame_px:.1f}% of frame"),
             ("Tumor pixels", f"{tumor_px} / {frame_px}"),
@@ -229,42 +179,9 @@ def _combo_page(pdf, index, total, combo, class_names, threshold):
     _subheading(pdf, "Run details")
     _kv_table(pdf, [
         ("Classifier", clf_label),
-        ("Segmenter", seg_label if combo["mask"] is not None else "Not run"),
+        ("Segmenter", seg_label if mask is not None else "Not run"),
         ("Confidence threshold", f"{threshold:.0%}"),
     ])
-
-
-def _summary_page(pdf, combos, class_names, threshold):
-    cls_results = summarize_classifiers(combos)
-    _, consensus_text = describe_consensus(cls_results)
-
-    pdf.add_page()
-    _section_title(pdf, "Consolidated Summary")
-
-    _subheading(pdf, "Classifier agreement")
-    pdf.set_font("Helvetica", "", 10)
-    pdf.multi_cell(0, 6, consensus_text)
-    pdf.ln(3)
-
-    _subheading(pdf, "Confidence by classifier")
-    chart = _comparison_chart(cls_results, class_names)
-    pdf.image(chart, x=10, w=150)
-    pdf.ln(4)
-
-    _subheading(pdf, "Per-classifier results")
-    rows = []
-    for c in cls_results:
-        seg_ran = any(x["classifier_name"] == c["classifier_name"] and x["mask"] is not None for x in combos)
-        rows.append((
-            display_name(c["classifier_name"]),
-            f"{c['top_class'].replace('_', ' ').title()}, {c['top_conf']:.1%} "
-            f"(segmentation {'run' if seg_ran else 'skipped'})",
-        ))
-    _kv_table(pdf, rows)
-    pdf.ln(3)
-
-    _subheading(pdf, "Report parameters")
-    _kv_table(pdf, [("Confidence threshold", f"{threshold:.0%}")])
     pdf.ln(6)
 
     pdf.set_font("Helvetica", "I", 8.5)
@@ -274,50 +191,27 @@ def _summary_page(pdf, combos, class_names, threshold):
                           "a qualified radiologist.")
     pdf.set_text_color(0, 0, 0)
 
-
-def build_pdf_report(image, combos, class_names, threshold):
-    """combos: list of 4 dicts, one per (classifier, segmenter) pair, each with
-    classifier_name, segmenter_name, probs, top_class, top_conf, verdict_kind,
-    mask (numpy bool array or None). Renders one page per combination (in
-    order) followed by a consolidated summary page.
-    """
-    pdf = ReportPDF(unit="mm", format="A4")
-    pdf.alias_nb_pages()
-    pdf.set_auto_page_break(auto=True, margin=20)
-
-    for i, combo in enumerate(combos, start=1):
-        _combo_page(pdf, i, len(combos), {**combo, "image": image}, class_names, threshold)
-
-    _summary_page(pdf, combos, class_names, threshold)
-
     return bytes(pdf.output())
 
 
 if __name__ == "__main__":
     dummy_img = Image.new("RGB", (256, 256), (120, 120, 120))
-    mask_a = np.zeros((256, 256), dtype=bool)
-    mask_a[80:160, 80:160] = True
+    dummy_probs = np.array([0.82, 0.05, 0.05, 0.08])
+    dummy_mask = np.zeros((256, 256), dtype=bool)
+    dummy_mask[80:160, 80:160] = True
     class_names = ["glioma", "meningioma", "pituitary", "no_tumor"]
 
-    probs_a = np.array([0.82, 0.05, 0.05, 0.08])
-    probs_b = np.array([0.61, 0.10, 0.09, 0.20])
-
-    combos = [
-        {"classifier_name": "efficientnet_b0", "segmenter_name": "deeplabv3plus",
-         "probs": probs_a, "top_class": "glioma", "top_conf": 0.82,
-         "verdict_kind": "tumor", "mask": mask_a},
-        {"classifier_name": "efficientnet_b0", "segmenter_name": "unet",
-         "probs": probs_a, "top_class": "glioma", "top_conf": 0.82,
-         "verdict_kind": "tumor", "mask": mask_a},
-        {"classifier_name": "mobilenet_v3", "segmenter_name": "deeplabv3plus",
-         "probs": probs_b, "top_class": "glioma", "top_conf": 0.61,
-         "verdict_kind": "uncertain", "mask": None},
-        {"classifier_name": "mobilenet_v3", "segmenter_name": "unet",
-         "probs": probs_b, "top_class": "glioma", "top_conf": 0.61,
-         "verdict_kind": "uncertain", "mask": None},
-    ]
-
-    pdf_bytes = build_pdf_report(dummy_img, combos, class_names, 0.70)
+    pdf_bytes = build_pdf_report(
+        dummy_img, "tumor", "glioma", 0.82, dummy_probs, class_names,
+        dummy_mask, "efficientnet_b0", "deeplabv3plus", 0.70,
+    )
     assert pdf_bytes[:4] == b"%PDF", "output is not a valid PDF"
     assert len(pdf_bytes) > 1000, "PDF suspiciously small"
-    print(f"OK - comprehensive report {len(pdf_bytes)} bytes, {len(combos) + 1} pages")
+
+    pdf_bytes_no_seg = build_pdf_report(
+        dummy_img, "no_tumor", "no_tumor", 0.95, dummy_probs, class_names,
+        None, "efficientnet_b0", None, 0.70,
+    )
+    assert pdf_bytes_no_seg[:4] == b"%PDF"
+
+    print(f"OK - tumor report {len(pdf_bytes)} bytes, no-tumor report {len(pdf_bytes_no_seg)} bytes")
