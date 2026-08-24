@@ -1,7 +1,9 @@
-"""Measure real classification/segmentation inference latency on this device.
+"""Measure real inference latency for all 4 classifier x segmenter
+combinations on this device (both classifiers, both segmenters, and each
+of the 4 combined pipelines).
 
-No Streamlit dependency, so it can run standalone on a Raspberry Pi to
-validate (or correct) the feasibility estimates before relying on them.
+No Streamlit dependency, so it can run standalone on a Raspberry Pi.
+Requires all 4 checkpoints pulled via `git lfs pull` (models/*.pt).
 
 Thermal safety: a Pi 4 without a heatsink can hit its throttle point within
 minutes of sustained multi-core load, which is exactly what a long benchmark
@@ -11,9 +13,8 @@ occurred so the numbers you get can be trusted.
 
 Usage:
     python benchmark.py
-    python benchmark.py --classifier mobilenet_v3 --segmenter unet --runs 20
+    python benchmark.py --runs 20 --cooldown 1.0 --max-temp 70
     python benchmark.py --image demo_images/glioma/some_image.jpg
-    python benchmark.py --cooldown 1.0 --max-temp 70
 """
 
 import argparse
@@ -41,6 +42,15 @@ IMAGENET_MEAN, IMAGENET_STD = [0.485, 0.456, 0.406], [0.229, 0.224, 0.225]
 IMG_SIZE_CLS = 224
 IMG_SIZE_SEG = 256
 DEVICE = torch.device("cpu")
+
+CLASSIFIER_CHOICES = ["efficientnet_b0", "mobilenet_v3"]
+SEGMENTER_CHOICES = ["deeplabv3plus", "unet"]
+DISPLAY_NAMES = {
+    "efficientnet_b0": "EfficientNetB0",
+    "mobilenet_v3": "MobileNetV3",
+    "unet": "UNet",
+    "deeplabv3plus": "DeepLabV3+",
+}
 
 THERMAL_ZONE = Path("/sys/class/thermal/thermal_zone0/temp")
 THROTTLE_FLAGS = {
@@ -132,7 +142,7 @@ def summarize(label, times):
     mean = statistics.mean(ms)
     median = statistics.median(ms)
     p95 = ms[min(len(ms) - 1, int(len(ms) * 0.95))]
-    print(f"{label:32s} mean {mean:7.1f} ms  median {median:7.1f} ms  "
+    print(f"{label:38s} mean {mean:7.1f} ms  median {median:7.1f} ms  "
           f"p95 {p95:7.1f} ms  min {ms[0]:7.1f} ms  max {ms[-1]:7.1f} ms")
 
 
@@ -145,11 +155,9 @@ def peak_memory_mb():
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--classifier", default="efficientnet_b0", choices=["efficientnet_b0", "mobilenet_v3"])
-    parser.add_argument("--segmenter", default="deeplabv3plus", choices=["deeplabv3plus", "unet"])
     parser.add_argument("--image", default=None, help="Test image path; defaults to the first demo image found")
-    parser.add_argument("--warmup", type=int, default=2, help="Untimed warmup runs (default 2)")
-    parser.add_argument("--runs", type=int, default=10, help="Timed runs to average (default 10)")
+    parser.add_argument("--warmup", type=int, default=2, help="Untimed warmup runs per stage (default 2)")
+    parser.add_argument("--runs", type=int, default=10, help="Timed runs to average per stage (default 10)")
     parser.add_argument("--cooldown", type=float, default=0.5,
                          help="Seconds to sleep between each timed run (default 0.5, 0 to disable)")
     parser.add_argument("--max-temp", type=float, default=75.0,
@@ -158,45 +166,55 @@ def main():
 
     image_path = Path(args.image) if args.image else next(Path("demo_images").rglob("*.jpg"))
     image = Image.open(image_path).convert("RGB")
+    cls_input = cls_tf(image).unsqueeze(0)
+    seg_input = seg_tf(image).unsqueeze(0)
 
     start_temp = read_temp_c()
     print(f"Threads available to torch: {torch.get_num_threads()}")
     print(f"Test image: {image_path}")
-    print(f"Warmup runs: {args.warmup}  Timed runs: {args.runs}  "
-          f"Cooldown: {args.cooldown}s  Max temp: {args.max_temp}C")
+    print(f"Warmup: {args.warmup}  Runs: {args.runs}  Cooldown: {args.cooldown}s  Max temp: {args.max_temp}C")
     if start_temp is not None:
         print(f"SoC temp at start: {start_temp:.1f}C")
     else:
-        print("SoC temp: unavailable on this device (no /sys/class/thermal/thermal_zone0) - "
-              "thermal pausing is disabled.")
+        print("SoC temp: unavailable on this device - thermal pausing is disabled.")
     print()
 
-    print(f"Loading classifier: {args.classifier}")
-    cls_model = load_cls_model(args.classifier)
-    print(f"Loading segmenter:  {args.segmenter}\n")
-    seg_model = load_seg_model(args.segmenter)
+    print("Loading all 4 checkpoints...")
+    cls_models = {}
+    for name in CLASSIFIER_CHOICES:
+        print(f"  classifier: {name}")
+        cls_models[name] = load_cls_model(name)
+    seg_models = {}
+    for name in SEGMENTER_CHOICES:
+        print(f"  segmenter:  {name}")
+        seg_models[name] = load_seg_model(name)
+    print()
 
-    cls_input = cls_tf(image).unsqueeze(0)
-    seg_input = seg_tf(image).unsqueeze(0)
-
-    def run_cls():
+    def run_cls(name):
         with torch.no_grad():
-            cls_model(cls_input)
+            cls_models[name](cls_input)
 
-    def run_seg():
+    def run_seg(name):
         with torch.no_grad():
-            seg_model(seg_input)
+            seg_models[name](seg_input)
 
-    def run_pipeline():
-        run_cls()
-        run_seg()
+    print("--- Individual models ---")
+    for name in CLASSIFIER_CHOICES:
+        summarize(f"Classifier: {DISPLAY_NAMES[name]}",
+                  time_calls(lambda n=name: run_cls(n), args.warmup, args.runs, args.cooldown, args.max_temp))
+    for name in SEGMENTER_CHOICES:
+        summarize(f"Segmenter: {DISPLAY_NAMES[name]}",
+                  time_calls(lambda n=name: run_seg(n), args.warmup, args.runs, args.cooldown, args.max_temp))
 
-    summarize(f"Classification ({args.classifier})",
-              time_calls(run_cls, args.warmup, args.runs, args.cooldown, args.max_temp))
-    summarize(f"Segmentation ({args.segmenter})",
-              time_calls(run_seg, args.warmup, args.runs, args.cooldown, args.max_temp))
-    summarize("Full pipeline",
-              time_calls(run_pipeline, args.warmup, args.runs, args.cooldown, args.max_temp))
+    print("\n--- All 4 classifier + segmenter combinations (full pipeline) ---")
+    for cls_name in CLASSIFIER_CHOICES:
+        for seg_name in SEGMENTER_CHOICES:
+            def run_pipeline(c=cls_name, s=seg_name):
+                run_cls(c)
+                run_seg(s)
+
+            label = f"{DISPLAY_NAMES[cls_name]} + {DISPLAY_NAMES[seg_name]}"
+            summarize(label, time_calls(run_pipeline, args.warmup, args.runs, args.cooldown, args.max_temp))
 
     end_temp = read_temp_c()
     if end_temp is not None:
@@ -216,7 +234,7 @@ def main():
 
     peak = peak_memory_mb()
     if peak is not None:
-        print(f"Peak RSS this process: {peak:.0f} MB")
+        print(f"Peak RSS this process: {peak:.0f} MB (all 4 models loaded simultaneously)")
     else:
         print("(Peak RSS reporting needs the `resource` module - Linux/Pi only, not available here.)")
 
