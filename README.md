@@ -101,4 +101,43 @@ throttling (peak RSS ~676 MB with all 4 models loaded simultaneously).
 Comfortably within the 4GB/32GB budget - see `benchmark.py` to reproduce or
 re-check after any dependency/model changes.
 
+### Pi 4 (CPU) vs Colab T4 (GPU)
+
+Same 4 model combinations, same methodology, run on a Colab T4 GPU via
+`colab_gpu_benchmark.ipynb` (in the `brain-tumor` repo) for a direct
+hardware comparison:
+
+| Model | Pi 4 mean (ms) | T4 mean (ms) | Speedup |
+|---|---|---|---|
+| Classifier: EfficientNetB0 | 282.0 | 8.76 | 32.2x |
+| Classifier: MobileNetV3 | 189.3 | 6.10 | 31.0x |
+| Segmenter: DeepLabV3+ | 1007.6 | 9.76 | 103.2x |
+| Segmenter: UNet | 926.5 | 6.51 | 142.3x |
+
+| Combination | Pi 4 mean (ms) | T4 mean (ms) | Speedup |
+|---|---|---|---|
+| EfficientNetB0 + DeepLabV3+ (app default) | 1295.5 | 14.82 | 87.4x |
+| EfficientNetB0 + UNet | 1203.9 | 13.87 | 86.8x |
+| MobileNetV3 + DeepLabV3+ | 1196.3 | 12.48 | 95.9x |
+| MobileNetV3 + UNet | 1114.6 | 12.52 | 89.0x |
+
+Segmentation gains far more from the GPU than classification (103-142x vs
+31-32x) - the heavier ResNet34-encoder segmenters parallelize better than
+the lighter classifiers. The UNet-faster-than-DeepLabV3+ finding holds on
+both platforms, confirming it's an architecture-compute difference (ASPP's
+dilated convolutions cost more per FLOP), not a CPU-specific quirk.
+
+Correctness check on the T4: all 20 demo images correctly classified
+(matching their folder labels), with sensible tumor-area segmentation on
+every tumor-class image and segmentation correctly skipped on every
+no_tumor image.
+
+Methodology note: the two runs used different single test images for the
+warmup/timed-run loop (Pi: a meningioma slice, `..._00287`; T4: a
+different meningioma slice, `..._00413`) and different run counts (Pi: 2
+warmup + 10 timed; T4: 5 warmup + 20 timed, with `torch.cuda.synchronize()`
+around every call since GPU kernel launches are asynchronous). Both are
+representative same-format slices, so the comparison is fair, but it
+wasn't literally the same file on both runs.
+
 Source project / training notebook: https://github.com/sarvan-2187/brain-tumor-edge
