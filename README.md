@@ -6,14 +6,34 @@ segmentation (UNet / DeepLabV3+).
 
 ## Contents
 
-- `app.py` — Streamlit app
-- `report.py` — PDF report generation
-- `benchmark.py` — standalone inference-latency benchmark (no Streamlit needed)
+- `app.py` — Streamlit web app (single image at a time, browser upload)
+- `report.py` — PDF report generation, shared by the app and the two scripts below
+- `batch_infer.py` — processes a folder of independent images, one PDF report each
+- `case_report.py` — processes a folder of slices from **one** scan, picks the single
+  "best view" slice, and writes **one** consolidated PDF report (used by `send_to_pi.py`
+  in the companion `brain-tumor` repo — see "Wireless pipeline" below)
+- `pi_thermal.py` — shared SoC-temperature/throttle-status helpers (used by
+  `benchmark.py` and `case_report.py`/`batch_infer.py`); no-ops off-Pi
+- `benchmark.py` — standalone inference-latency benchmark, all 4 model combinations
+  (no Streamlit needed)
 - `requirements.txt` — Python dependencies
 - `requirements-pi.txt` — dependencies for ARM / Raspberry Pi (CPU-only torch)
 - `models/` — trained checkpoints (`*_best.pt`), tracked via Git LFS
 - `demo_images/<class>/` — sample MRI slices per class (glioma, meningioma,
   no_tumor, pituitary) for the "Use this image" demo buttons
+
+## Wireless pipeline (NIfTI scan -> Pi -> report)
+
+This repo runs on the Pi and is the receiving end of a pipeline that starts on a
+separate local computer, in the companion **`brain-tumor`** repo:
+
+```
+.nii scan  --[nii_to_slices.py]-->  PNG slices  --[send_to_pi.py, SSH/SCP]-->
+    (this repo's case_report.py runs here on the Pi)  --[SCP]-->  one PDF report
+```
+
+`send_to_pi.py` (and its browser wrapper, `nii_web_app.py`) live in the `brain-tumor`
+repo, not here — see that repo's README for the local-computer side.
 
 ## Run locally
 
