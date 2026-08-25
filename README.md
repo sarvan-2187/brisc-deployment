@@ -64,23 +64,26 @@ python benchmark.py
 
 ### Measured on a Raspberry Pi 4 (4GB, CPU-only)
 
-Individual models:
+Test image: `demo_images/meningioma/brisc2025_test_00287_me_ax_t1.jpg` — 2 warmup runs,
+10 timed runs per stage.
 
-| Model | Latency |
-|---|---|
-| Classifier: EfficientNetB0 | ~282 ms |
-| Classifier: MobileNetV3 | ~189 ms |
-| Segmenter: DeepLabV3+ | ~1008 ms |
-| Segmenter: UNet | ~927 ms |
+Individual models (ms):
 
-All 4 classifier + segmenter combinations (full pipeline):
+| Model | Mean | Median | p95 | Min | Max |
+|---|---|---|---|---|---|
+| Classifier: EfficientNetB0 | 282.0 | 280.1 | 308.7 | 274.8 | 308.7 |
+| Classifier: MobileNetV3 | 189.3 | 187.2 | 207.5 | 186.2 | 207.5 |
+| Segmenter: DeepLabV3+ | 1007.6 | 1004.5 | 1045.7 | 992.6 | 1045.7 |
+| Segmenter: UNet | 926.5 | 924.3 | 938.4 | 918.6 | 938.4 |
 
-| Combination | Full pipeline |
-|---|---|
-| EfficientNetB0 + DeepLabV3+ (app default) | ~1296 ms |
-| EfficientNetB0 + UNet | ~1204 ms |
-| MobileNetV3 + DeepLabV3+ | ~1196 ms |
-| MobileNetV3 + UNet | ~1115 ms |
+All 4 classifier + segmenter combinations, full pipeline (ms):
+
+| Combination | Mean | Median | p95 | Min | Max |
+|---|---|---|---|---|---|
+| EfficientNetB0 + DeepLabV3+ (app default) | 1295.5 | 1292.7 | 1325.5 | 1288.7 | 1325.5 |
+| EfficientNetB0 + UNet | 1203.9 | 1203.1 | 1223.0 | 1194.1 | 1223.0 |
+| MobileNetV3 + DeepLabV3+ | 1196.3 | 1197.8 | 1200.5 | 1188.5 | 1200.5 |
+| MobileNetV3 + UNet | 1114.6 | 1114.8 | 1125.0 | 1102.2 | 1125.0 |
 
 Note: checkpoint file size doesn't predict latency here — UNet (93.4 MB) is
 faster than DeepLabV3+ (85.8 MB) on this hardware, since DeepLabV3+'s ASPP
