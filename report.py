@@ -194,6 +194,81 @@ def build_pdf_report(image, verdict_kind, top_class, top_conf, probs, class_name
     return bytes(pdf.output())
 
 
+def build_case_pdf_report(slice_results, best_image, best_mask, overall_verdict,
+                           best_top_class, best_top_conf, best_probs, class_names,
+                           classifier_name, segmenter_name, threshold):
+    """One consolidated report for every slice belonging to a single case
+    (e.g. one patient's scan), instead of one report per slice.
+
+    slice_results: list of dicts with 'filename', 'top_class', 'top_conf',
+    'verdict_kind' - one entry per slice, for the per-slice traceability
+    table. best_image/best_mask: the single most representative ("best
+    view") slice's image and segmentation mask (best_mask is None if no
+    slice was confidently a tumor, so segmentation never ran).
+    """
+    clf_label = display_name(classifier_name)
+    seg_label = display_name(segmenter_name) if segmenter_name else None
+
+    pdf = ReportPDF(unit="mm", format="A4")
+    pdf.alias_nb_pages()
+    pdf.set_auto_page_break(auto=True, margin=20)
+    pdf.add_page()
+
+    _section_title(pdf, "Brain Tumor MRI Case Report")
+    _verdict_box(pdf, overall_verdict, best_top_class, best_top_conf)
+
+    _subheading(pdf, f"Best view ({len(slice_results)} slice(s) analyzed)")
+    _image_row(pdf, best_image, best_mask)
+
+    _subheading(pdf, "Classification confidence (best view)")
+    chart = _confidence_chart(np.asarray(best_probs), class_names)
+    pdf.image(chart, x=10, w=140)
+    pdf.ln(4)
+
+    if best_mask is not None:
+        _subheading(pdf, "Tumor metrics (best view)")
+        tumor_px = int(best_mask.sum())
+        frame_px = int(best_mask.size)
+        _kv_table(pdf, [
+            ("Tumor area", f"{100 * tumor_px / frame_px:.1f}% of frame"),
+            ("Tumor pixels", f"{tumor_px} / {frame_px}"),
+        ])
+        pdf.ln(3)
+
+    _subheading(pdf, "Run details")
+    _kv_table(pdf, [
+        ("Slices analyzed", str(len(slice_results))),
+        ("Classifier", clf_label),
+        ("Segmenter", seg_label if best_mask is not None else "Not run"),
+        ("Confidence threshold", f"{threshold:.0%}"),
+    ])
+    pdf.ln(4)
+
+    _subheading(pdf, "Per-slice results")
+    pdf.set_font("Helvetica", "B", 8.5)
+    pdf.set_fill_color(245, 246, 248)
+    pdf.cell(75, 6, "  Slice", border=1, fill=True)
+    pdf.cell(45, 6, "  Predicted class", border=1, fill=True)
+    pdf.cell(30, 6, "  Confidence", border=1, fill=True)
+    pdf.cell(30, 6, "  Result", border=1, new_x=XPos.LMARGIN, new_y=YPos.NEXT, fill=True)
+    pdf.set_font("Helvetica", "", 8.5)
+    for r in slice_results:
+        pdf.cell(75, 6, f"  {r['filename']}", border=1)
+        pdf.cell(45, 6, f"  {r['top_class'].replace('_', ' ').title()}", border=1)
+        pdf.cell(30, 6, f"  {r['top_conf']:.1%}", border=1)
+        pdf.cell(30, 6, f"  {r['verdict_kind']}", border=1, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.ln(4)
+
+    pdf.set_font("Helvetica", "I", 8.5)
+    pdf.set_text_color(120, 120, 120)
+    pdf.multi_cell(0, 4.5, "Research and demonstration tool only. Not a certified diagnostic device "
+                          "and not intended for clinical use. Findings should always be reviewed by "
+                          "a qualified radiologist.")
+    pdf.set_text_color(0, 0, 0)
+
+    return bytes(pdf.output())
+
+
 if __name__ == "__main__":
     dummy_img = Image.new("RGB", (256, 256), (120, 120, 120))
     dummy_probs = np.array([0.82, 0.05, 0.05, 0.08])
@@ -214,4 +289,18 @@ if __name__ == "__main__":
     )
     assert pdf_bytes_no_seg[:4] == b"%PDF"
 
-    print(f"OK - tumor report {len(pdf_bytes)} bytes, no-tumor report {len(pdf_bytes_no_seg)} bytes")
+    slice_results = [
+        {"filename": "slice_0070.png", "top_class": "no_tumor", "top_conf": 0.55, "verdict_kind": "no_tumor"},
+        {"filename": "slice_0072.png", "top_class": "glioma", "top_conf": 0.61, "verdict_kind": "uncertain"},
+        {"filename": "slice_0074.png", "top_class": "glioma", "top_conf": 0.91, "verdict_kind": "tumor"},
+        {"filename": "slice_0076.png", "top_class": "glioma", "top_conf": 0.78, "verdict_kind": "tumor"},
+    ]
+    case_pdf_bytes = build_case_pdf_report(
+        slice_results, dummy_img, dummy_mask, "tumor", "glioma", 0.91, dummy_probs,
+        class_names, "efficientnet_b0", "deeplabv3plus", 0.70,
+    )
+    assert case_pdf_bytes[:4] == b"%PDF"
+    assert len(case_pdf_bytes) > 1000
+
+    print(f"OK - tumor report {len(pdf_bytes)} bytes, no-tumor report {len(pdf_bytes_no_seg)} bytes, "
+          f"case report {len(case_pdf_bytes)} bytes")
