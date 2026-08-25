@@ -1,4 +1,4 @@
-# BRISC Brain Tumor MRI — Streamlit Demo
+# BRISC Brain Tumor MRI - Streamlit Demo
 
 Standalone deployment repo for the BRISC 2025 baseline models: upload an MRI slice
 (or pick a demo image) and run classification (EfficientNetB0 / MobileNetV3) or
@@ -6,20 +6,20 @@ segmentation (UNet / DeepLabV3+).
 
 ## Contents
 
-- `app.py` — Streamlit web app (single image at a time, browser upload)
-- `report.py` — PDF report generation, shared by the app and the two scripts below
-- `batch_infer.py` — processes a folder of independent images, one PDF report each
-- `case_report.py` — processes a folder of slices from **one** scan, picks the single
+- `app.py` - Streamlit web app (single image at a time, browser upload)
+- `report.py` - PDF report generation, shared by the app and the two scripts below
+- `batch_infer.py` - processes a folder of independent images, one PDF report each
+- `case_report.py` - processes a folder of slices from **one** scan, picks the single
   "best view" slice, and writes **one** consolidated PDF report (used by `send_to_pi.py`
-  in the companion `brain-tumor` repo — see "Wireless pipeline" below)
-- `pi_thermal.py` — shared SoC-temperature/throttle-status helpers (used by
+  in the companion `brain-tumor` repo - see "Wireless pipeline" below)
+- `pi_thermal.py` - shared SoC-temperature/throttle-status helpers (used by
   `benchmark.py` and `case_report.py`/`batch_infer.py`); no-ops off-Pi
-- `benchmark.py` — standalone inference-latency benchmark, all 4 model combinations
+- `benchmark.py` - standalone inference-latency benchmark, all 4 model combinations
   (no Streamlit needed)
-- `requirements.txt` — Python dependencies
-- `requirements-pi.txt` — dependencies for ARM / Raspberry Pi (CPU-only torch)
-- `models/` — trained checkpoints (`*_best.pt`), tracked via Git LFS
-- `demo_images/<class>/` — sample MRI slices per class (glioma, meningioma,
+- `requirements.txt` - Python dependencies
+- `requirements-pi.txt` - dependencies for ARM / Raspberry Pi (CPU-only torch)
+- `models/` - trained checkpoints (`*_best.pt`), tracked via Git LFS
+- `demo_images/<class>/` - sample MRI slices per class (glioma, meningioma,
   no_tumor, pituitary) for the "Use this image" demo buttons
 
 ## Wireless pipeline (NIfTI scan -> Pi -> report)
@@ -33,7 +33,7 @@ separate local computer, in the companion **`brain-tumor`** repo:
 ```
 
 `send_to_pi.py` (and its browser wrapper, `nii_web_app.py`) live in the `brain-tumor`
-repo, not here — see that repo's README for the local-computer side.
+repo, not here - see that repo's README for the local-computer side.
 
 ## Run locally
 
@@ -44,7 +44,7 @@ streamlit run app.py
 
 ## Run on Raspberry Pi (or other ARM CPU-only device)
 
-Use `requirements-pi.txt` instead of `requirements.txt` — it installs the
+Use `requirements-pi.txt` instead of `requirements.txt` - it installs the
 CPU-only PyTorch build so pip doesn't pull in `nvidia-cuda-*`/cublas/cudnn
 packages that are irrelevant on ARM:
 
@@ -64,7 +64,7 @@ python benchmark.py
 
 ### Measured on a Raspberry Pi 4 (4GB, CPU-only)
 
-Test image: `demo_images/meningioma/brisc2025_test_00287_me_ax_t1.jpg` — 2 warmup runs,
+Test image: `demo_images/meningioma/brisc2025_test_00287_me_ax_t1.jpg` - 2 warmup runs,
 10 timed runs per stage.
 
 Individual models (ms):
@@ -85,7 +85,7 @@ All 4 classifier + segmenter combinations, full pipeline (ms):
 | MobileNetV3 + DeepLabV3+ | 1196.3 | 1197.8 | 1200.5 | 1188.5 | 1200.5 |
 | MobileNetV3 + UNet | 1114.6 | 1114.8 | 1125.0 | 1102.2 | 1125.0 |
 
-Note: checkpoint file size doesn't predict latency here — UNet (93.4 MB) is
+Note: checkpoint file size doesn't predict latency here - UNet (93.4 MB) is
 faster than DeepLabV3+ (85.8 MB) on this hardware, since DeepLabV3+'s ASPP
 decoder is more compute-heavy per-FLOP than UNet's simpler decoder. The
 app's default pair (EfficientNetB0 + DeepLabV3+) is kept for best reported
@@ -98,7 +98,7 @@ your use case.
 
 SoC temperature rose 44.3C -> 55.0C over the full benchmark with no
 throttling (peak RSS ~676 MB with all 4 models loaded simultaneously).
-Comfortably within the 4GB/32GB budget — see `benchmark.py` to reproduce or
+Comfortably within the 4GB/32GB budget - see `benchmark.py` to reproduce or
 re-check after any dependency/model changes.
 
 Source project / training notebook: https://github.com/sarvan-2187/brain-tumor-edge
