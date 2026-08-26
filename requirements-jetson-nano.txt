@@ -10,12 +10,20 @@
 # JetPack images ship Python 3.6 with an old pip/setuptools that has no
 # prebuilt wheel to fall back on for these on aarch64, so it tries to
 # compile them from source and fails (this is what produced the
-# "distutils.errors.DistutilsError" / matplotlib build failure). NVIDIA
-# ships tested prebuilt versions of these via apt - installing them there
+# "distutils.errors.DistutilsError" / matplotlib build failure, and
+# separately a Pillow build failure over a missing libjpeg). NVIDIA/Ubuntu
+# ship tested prebuilt versions of these via apt - installing them there
 # and inheriting them into the venv is faster and actually works:
 #
 #   sudo apt update
-#   sudo apt install -y python3-numpy python3-pillow python3-matplotlib
+#   sudo apt install -y python3-numpy python3-pil python3-matplotlib
+#
+# Note the Pillow package is `python3-pil`, NOT `python3-pillow` (that name
+# doesn't exist on Ubuntu/Debian and apt install aborts the ENTIRE command
+# if any package name in it is invalid - so a typo there can silently skip
+# installing numpy/matplotlib too, not just fail on the bad name alone).
+# Confirm all three actually landed before moving on:
+#   python3 -c "import numpy, PIL, matplotlib; print('ok')"
 #
 # Then create (or recreate) the venv WITH --system-site-packages so it can
 # see those apt-installed packages instead of trying to rebuild them:
@@ -69,6 +77,13 @@
 # install. 0.4.12 has supported efficientnet_b0 (all this project's own
 # code calls timm for) since long before this pin, so nothing here loses
 # functionality by pinning down to it.
+#
+# `pip install wheel` first, in the venv: without it, this old pip can't
+# run bdist_wheel and prints a "error: invalid command 'bdist_wheel'" for
+# every pure-Python sdist (pretrainedmodels, efficientnet-pytorch, etc.)
+# before falling back to a plain source install. Harmless noise for those,
+# but cheap to avoid and it removes one more thing to have to tell apart
+# from a real failure.
 
 timm==0.4.12
 segmentation-models-pytorch
