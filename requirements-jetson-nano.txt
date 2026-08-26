@@ -6,16 +6,39 @@
 # on a Jetson either fails or silently installs a CPU-only build with none
 # of the GPU support that is the entire point of deploying here.
 #
-# Install the JetPack-matched PyTorch wheel first, from NVIDIA's official
+# numpy, pillow, and matplotlib are ALSO not listed here on purpose. Older
+# JetPack images ship Python 3.6 with an old pip/setuptools that has no
+# prebuilt wheel to fall back on for these on aarch64, so it tries to
+# compile them from source and fails (this is what produced the
+# "distutils.errors.DistutilsError" / matplotlib build failure). NVIDIA
+# ships tested prebuilt versions of these via apt - installing them there
+# and inheriting them into the venv is faster and actually works:
+#
+#   sudo apt update
+#   sudo apt install -y python3-numpy python3-pillow python3-matplotlib
+#
+# Then create (or recreate) the venv WITH --system-site-packages so it can
+# see those apt-installed packages instead of trying to rebuild them:
+#
+#   python3 -m venv --system-site-packages .venv
+#   source .venv/bin/activate
+#
+# If the venv already exists without --system-site-packages, delete it and
+# recreate it that way - there is no flag to add this to an existing venv.
+#
+# Now install the JetPack-matched PyTorch wheel, from NVIDIA's official
 # instructions for your JetPack/L4T version:
 #   https://developer.nvidia.com/embedded/downloads (search "PyTorch for Jetson")
-# then install the rest of this file:
+#
+# Then install the rest of this file:
 #
 # Usage: pip install -r requirements-jetson-nano.txt
+#
+# If timm or segmentation-models-pytorch complain the apt numpy is too old
+# to import, `pip install -U numpy` inside the venv - by then torch is
+# already installed against the apt numpy ABI, so upgrading via pip is
+# safe at that point, just don't do it before installing torch.
 
 timm
 segmentation-models-pytorch
-pillow
-numpy
 fpdf2
-matplotlib
