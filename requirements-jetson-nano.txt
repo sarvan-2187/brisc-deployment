@@ -23,12 +23,28 @@
 #   python3 -m venv --system-site-packages .venv
 #   source .venv/bin/activate
 #
-# If the venv already exists without --system-site-packages, delete it and
-# recreate it that way - there is no flag to add this to an existing venv.
+# If the venv already exists without --system-site-packages, it can be
+# fixed in place without recreating it (which would mean redoing the whole
+# torch/torchvision install) - just flip the flag in its config and start a
+# new shell:
+#
+#   sed -i 's/include-system-site-packages = false/include-system-site-packages = true/' .venv/pyvenv.cfg
 #
 # Now install the JetPack-matched PyTorch wheel, from NVIDIA's official
 # instructions for your JetPack/L4T version:
 #   https://developer.nvidia.com/embedded/downloads (search "PyTorch for Jetson")
+#
+# torchvision has no prebuilt wheel for this combo and must be built from
+# source, matched to the torch version installed. Critically, install it
+# WITHOUT --user: venvs ignore the per-user site-packages directory by
+# default, so a --user install is invisible to pip inside the venv, which
+# then tries to fetch its own (ancient, PyPI-only, non-CUDA) torchvision
+# when timm pulls it in as a dependency below - silently replacing the one
+# you built. Run `python3 setup.py install` (no --user) from inside the
+# activated venv instead, then confirm:
+#   python3 -c "import torchvision; print(torchvision.__version__)"
+# should print the version you built (e.g. 0.12.0), not something like
+# 0.2.2.
 #
 # Then install the rest of this file:
 #
@@ -38,7 +54,22 @@
 # to import, `pip install -U numpy` inside the venv - by then torch is
 # already installed against the apt numpy ABI, so upgrading via pip is
 # safe at that point, just don't do it before installing torch.
+#
+# fpdf2 is pinned below: 2.6.0+ requires fonttools>=4.34, which has no
+# Python 3.6 build (fonttools dropped 3.6 support after 4.27.1) - pip
+# reports "No matching distribution found for fonttools>=4.34.0" if you
+# use an unpinned fpdf2 here. 2.5.7 requires an unpinned fonttools, so pip
+# picks the newest one still available for 3.6 instead.
+#
+# timm is pinned to match segmentation-models-pytorch==0.3.1's own exact
+# requirement (timm==0.4.12). Leaving timm unversioned lets pip's old,
+# non-backtracking resolver here install a newer timm (0.6.12 was observed)
+# that satisfies our line first, silently conflicting with what smp
+# actually needs - it won't necessarily error, just leave an inconsistent
+# install. 0.4.12 has supported efficientnet_b0 (all this project's own
+# code calls timm for) since long before this pin, so nothing here loses
+# functionality by pinning down to it.
 
-timm
+timm==0.4.12
 segmentation-models-pytorch
-fpdf2
+fpdf2==2.5.7
