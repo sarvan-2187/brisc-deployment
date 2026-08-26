@@ -23,9 +23,7 @@ Usage:
 """
 
 import argparse
-import glob
 import statistics
-import subprocess
 import time
 from pathlib import Path
 
@@ -36,6 +34,8 @@ import torch.nn as nn
 from PIL import Image
 from torchvision import transforms
 from torchvision.models import mobilenet_v3_large
+
+from jetson_thermal import read_tegrastats_line, read_thermal_zones, wait_for_safe_temp
 
 try:
     import resource
@@ -84,64 +84,6 @@ def load_seg_model(name, device):
     m = cls(encoder_name="resnet34", encoder_weights=None, in_channels=3, classes=1)
     m.load_state_dict(torch.load(CKPT_DIR / f"{name}_best.pt", map_location=device, weights_only=False))
     return m.to(device).eval()
-
-
-# --- Jetson thermal/power helpers (not shared with pi_thermal.py - the
-# zone layout and tooling genuinely differ between Broadcom and Tegra) ---
-
-def read_thermal_zones():
-    """Every named thermal zone the kernel exposes (cpu, gpu, soc, etc.),
-    not just zone0 - Jetson has several and zone0 is not reliably the CPU.
-    Returns a dict of {zone_name: temp_c}; empty off-device.
-    """
-    zones = {}
-    for type_path in sorted(glob.glob("/sys/class/thermal/thermal_zone*/type")):
-        temp_path = type_path.replace("/type", "/temp")
-        try:
-            name = Path(type_path).read_text().strip()
-            milli = int(Path(temp_path).read_text().strip())
-            zones[name] = milli / 1000
-        except (FileNotFoundError, ValueError):
-            continue
-    return zones
-
-
-def read_tegrastats_line(timeout=3):
-    """One line of `tegrastats` output (power rails, GPU/CPU load), or
-    None if the binary isn't on PATH (e.g. running this off-Jetson).
-    """
-    try:
-        proc = subprocess.Popen(["tegrastats", "--interval", "500"], stdout=subprocess.PIPE, text=True)
-    except FileNotFoundError:
-        return None
-    try:
-        line = proc.stdout.readline().strip()
-    except Exception:
-        line = None
-    finally:
-        proc.terminate()
-        try:
-            proc.wait(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-    return line or None
-
-
-def wait_for_safe_temp(max_temp, poll_seconds=5):
-    zones = read_thermal_zones()
-    if not zones:
-        return
-    hottest_name, hottest_temp = max(zones.items(), key=lambda kv: kv[1])
-    if hottest_temp < max_temp:
-        return
-    print(f"  {hottest_name} at {hottest_temp:.1f}C (limit {max_temp:.1f}C) - pausing to cool down...")
-    while hottest_temp >= max_temp:
-        time.sleep(poll_seconds)
-        zones = read_thermal_zones()
-        if not zones:
-            break
-        hottest_name, hottest_temp = max(zones.items(), key=lambda kv: kv[1])
-    print(f"  Back to {hottest_temp:.1f}C, resuming.\n")
 
 
 def time_calls(fn, warmup, runs, cooldown, max_temp, synchronize):

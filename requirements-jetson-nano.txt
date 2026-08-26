@@ -1,0 +1,21 @@
+# Jetson Nano (JetPack / L4T) install.
+#
+# torch and torchvision are NOT listed here on purpose: the generic PyPI
+# wheels (including the CPU-only ones used for requirements-pi.txt) are not
+# built for Jetson's ARM + CUDA combination, and a plain `pip install torch`
+# on a Jetson either fails or silently installs a CPU-only build with none
+# of the GPU support that is the entire point of deploying here.
+#
+# Install the JetPack-matched PyTorch wheel first, from NVIDIA's official
+# instructions for your JetPack/L4T version:
+#   https://developer.nvidia.com/embedded/downloads (search "PyTorch for Jetson")
+# then install the rest of this file:
+#
+# Usage: pip install -r requirements-jetson-nano.txt
+
+timm
+segmentation-models-pytorch
+pillow
+numpy
+fpdf2
+matplotlib
