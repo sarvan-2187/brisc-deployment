@@ -4,6 +4,7 @@ so it can be smoke-tested standalone (see __main__ below).
 
 import io
 from datetime import datetime, timezone
+from pathlib import Path
 
 import matplotlib
 
@@ -32,6 +33,12 @@ VERDICT_LABELS = {
     "no_tumor": "No tumor detected",
     "uncertain": "Uncertain, review recommended",
 }
+
+# Geist (SIL OFL) - bundled as .ttf so the PDF doesn't depend on fonts being
+# installed on whatever machine renders it. Regular + Bold only: Geist ships
+# no italic weight, so italic-styled text below uses Regular at a muted color
+# instead of a synthetic/missing italic.
+FONTS_DIR = Path(__file__).resolve().parent / "fonts"
 
 
 def display_name(model_key):
@@ -68,7 +75,38 @@ def _confidence_chart(probs, class_names):
     return Image.open(buf)
 
 
+def _temperature_chart(temp_before_c, temp_after_c):
+    """Before/after bar chart of edge-device temperature across the inference
+    run. Only called when both readings are available.
+    """
+    fig, ax = plt.subplots(figsize=(5.5, 2.6))
+    labels = ["Before inference", "After inference"]
+    values = [temp_before_c, temp_after_c]
+    delta = temp_after_c - temp_before_c
+    rising_color = "#c0392b" if delta >= 0 else "#27ae60"
+    ax.bar(labels, values, color=["#2c3e50", rising_color], width=0.5)
+    ax.set_ylabel("Temperature (C)")
+    headroom = max(values) * 0.15 or 1
+    ax.set_ylim(0, max(values) + headroom)
+    for i, v in enumerate(values):
+        ax.text(i, v + headroom * 0.15, f"{v:.1f}C", ha="center", fontsize=9)
+    ax.set_title(f"{delta:+.1f}C over the run", fontsize=9, color=rising_color)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    fig.tight_layout()
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", dpi=150)
+    plt.close(fig)
+    buf.seek(0)
+    return Image.open(buf)
+
+
 class ReportPDF(FPDF):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.add_font("Geist", "", str(FONTS_DIR / "Geist-Regular.ttf"))
+        self.add_font("Geist", "B", str(FONTS_DIR / "Geist-Bold.ttf"))
+
     def header(self):
         self.set_fill_color(*ACCENT_COLOR)
         self.rect(0, 0, self.w, 4, style="F")
@@ -78,15 +116,15 @@ class ReportPDF(FPDF):
         self.set_y(-15)
         self.set_draw_color(220, 220, 220)
         self.line(10, self.get_y(), 200, self.get_y())
-        self.set_font("Helvetica", "I", 8)
+        self.set_font("Geist", "", 8)
         self.set_text_color(140, 140, 140)
         self.cell(0, 10, f"Page {self.page_no()} of {{nb}}", align="C")
 
 
 def _section_title(pdf, title):
-    pdf.set_font("Helvetica", "B", 16)
+    pdf.set_font("Geist", "B", 16)
     pdf.cell(0, 9, title, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-    pdf.set_font("Helvetica", "", 8)
+    pdf.set_font("Geist", "", 8)
     pdf.set_text_color(120, 120, 120)
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     pdf.cell(0, 5, f"Generated {timestamp}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
@@ -98,7 +136,7 @@ def _section_title(pdf, title):
 
 
 def _subheading(pdf, text):
-    pdf.set_font("Helvetica", "B", 11)
+    pdf.set_font("Geist", "B", 11)
     pdf.set_text_color(*ACCENT_COLOR)
     pdf.cell(0, 7, text, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.set_text_color(0, 0, 0)
@@ -106,10 +144,10 @@ def _subheading(pdf, text):
 
 def _kv_table(pdf, rows, col1=55, col2=125):
     for label, value in rows:
-        pdf.set_font("Helvetica", "B", 9.5)
+        pdf.set_font("Geist", "B", 9.5)
         pdf.set_fill_color(245, 246, 248)
         pdf.cell(col1, 7, f"  {label}", border=1, fill=True)
-        pdf.set_font("Helvetica", "", 9.5)
+        pdf.set_font("Geist", "", 9.5)
         pdf.cell(col2, 7, f"  {value}", border=1, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
 
@@ -117,7 +155,7 @@ def _verdict_box(pdf, verdict_kind, top_class, top_conf):
     color = VERDICT_COLORS[verdict_kind]
     pdf.set_fill_color(*color)
     pdf.set_text_color(255, 255, 255)
-    pdf.set_font("Helvetica", "B", 12)
+    pdf.set_font("Geist", "B", 12)
     label = VERDICT_LABELS[verdict_kind]
     if verdict_kind == "no_tumor":
         text = f"  {label}, {top_conf:.1%} confidence"
@@ -133,16 +171,29 @@ def _image_row(pdf, image, mask):
     y0 = pdf.get_y()
     pdf.image(image.resize((512, 512)), x=10, y=y0, w=img_w)
     pdf.set_xy(10, y0 + img_w + 2)
-    pdf.set_font("Helvetica", "I", 8)
+    pdf.set_font("Geist", "", 8)
+    pdf.set_text_color(120, 120, 120)
     pdf.cell(img_w, 5, "Input MRI slice", align="C")
+    pdf.set_text_color(0, 0, 0)
 
     if mask is not None:
         overlay = overlay_mask(image, mask)
         pdf.image(overlay, x=10 + img_w + 10, y=y0, w=img_w)
         pdf.set_xy(10 + img_w + 10, y0 + img_w + 2)
+        pdf.set_text_color(120, 120, 120)
         pdf.cell(img_w, 5, "Predicted tumor mask (highlighted)", align="C")
+        pdf.set_text_color(0, 0, 0)
 
     pdf.set_y(y0 + img_w + 14)
+
+
+def _disclaimer(pdf):
+    pdf.set_font("Geist", "", 8.5)
+    pdf.set_text_color(120, 120, 120)
+    pdf.multi_cell(0, 4.5, "Research and demonstration tool only. Not a certified diagnostic device "
+                          "and not intended for clinical use. Findings should always be reviewed by "
+                          "a qualified radiologist.")
+    pdf.set_text_color(0, 0, 0)
 
 
 def build_pdf_report(image, verdict_kind, top_class, top_conf, probs, class_names,
@@ -187,23 +238,19 @@ def build_pdf_report(image, verdict_kind, top_class, top_conf, probs, class_name
     ])
     pdf.ln(6)
 
-    pdf.set_font("Helvetica", "I", 8.5)
-    pdf.set_text_color(120, 120, 120)
-    pdf.multi_cell(0, 4.5, "Research and demonstration tool only. Not a certified diagnostic device "
-                          "and not intended for clinical use. Findings should always be reviewed by "
-                          "a qualified radiologist.")
-    pdf.set_text_color(0, 0, 0)
+    _disclaimer(pdf)
 
     return bytes(pdf.output())
 
 
-def _device_performance_section(pdf, device_info):
+def _device_performance_table(pdf, device_info):
     """device_info: dict with 'device' (str), 'inference_seconds' (float),
     'temp_before_c'/'temp_after_c' (float or None), and optional 'notes'
     (list of str, e.g. throttling warnings). Any temp field may be None if
     unavailable on that hardware (e.g. running off-device) - rendered as
     "n/a" rather than omitted, so the report is honest about what wasn't
-    measured.
+    measured. Just the key/value table + notes; the temperature chart (when
+    both readings exist) is drawn separately, on the image/graph page.
     """
     _subheading(pdf, "Device & performance")
     rows = [
@@ -220,12 +267,32 @@ def _device_performance_section(pdf, device_info):
     notes = device_info.get("notes")
     if notes:
         pdf.ln(2)
-        pdf.set_font("Helvetica", "I", 8.5)
+        pdf.set_font("Geist", "", 8.5)
         pdf.set_text_color(180, 60, 20)
         for note in notes:
             pdf.multi_cell(0, 4.5, f"Note: {note}")
         pdf.set_text_color(0, 0, 0)
     pdf.ln(3)
+
+
+def _charts_row(pdf, confidence_img, temperature_img):
+    """Confidence chart (and, when available, the temperature chart) placed
+    side by side rather than stacked - two full-width stacked charts don't
+    fit page 1's height budget alongside the verdict box and slice images,
+    so this keeps everything on one page instead of spilling an awkward
+    near-empty page in between.
+    """
+    if temperature_img is not None:
+        conf_w, temp_w = 100, 78
+        y0 = pdf.get_y()
+        pdf.image(confidence_img, x=10, y=y0, w=conf_w)
+        pdf.image(temperature_img, x=190 - temp_w, y=y0, w=temp_w)
+        conf_h = conf_w * confidence_img.height / confidence_img.width
+        temp_h = temp_w * temperature_img.height / temperature_img.width
+        pdf.set_y(y0 + max(conf_h, temp_h) + 4)
+    else:
+        pdf.image(confidence_img, x=10, w=140)
+        pdf.ln(4)
 
 
 def build_case_pdf_report(slice_results, best_image, best_mask, overall_verdict,
@@ -234,13 +301,19 @@ def build_case_pdf_report(slice_results, best_image, best_mask, overall_verdict,
     """One consolidated report for every slice belonging to a single case
     (e.g. one patient's scan), instead of one report per slice.
 
+    Page 1 is all images and graphs (best-view slice + mask, classification
+    confidence chart, temperature-change chart if device_info has both
+    readings) so the visual summary is skimmable at a glance; page 2 is
+    every table (tumor metrics, run details, device performance, the
+    full per-slice breakdown) for anyone who wants the numbers.
+
     slice_results: list of dicts with 'filename', 'top_class', 'top_conf',
     'verdict_kind' - one entry per slice, for the per-slice traceability
     table. best_image/best_mask: the single most representative ("best
     view") slice's image and segmentation mask (best_mask is None if no
     slice was confidently a tumor, so segmentation never ran).
 
-    device_info: optional dict (see _device_performance_section) adding an
+    device_info: optional dict (see _device_performance_table) adding an
     "edge device" section to the report - device name, inference wall-clock
     time, and temperature before/after. Omitted entirely if None, so
     build_case_pdf_report keeps working for any caller that doesn't have
@@ -252,6 +325,8 @@ def build_case_pdf_report(slice_results, best_image, best_mask, overall_verdict,
     pdf = ReportPDF(unit="mm", format="A4")
     pdf.alias_nb_pages()
     pdf.set_auto_page_break(auto=True, margin=20)
+
+    # --- Page 1: images and graphs ---
     pdf.add_page()
 
     _section_title(pdf, "Brain Tumor MRI Case Report")
@@ -260,10 +335,19 @@ def build_case_pdf_report(slice_results, best_image, best_mask, overall_verdict,
     _subheading(pdf, f"Best view ({len(slice_results)} slice(s) analyzed)")
     _image_row(pdf, best_image, best_mask)
 
-    _subheading(pdf, "Classification confidence (best view)")
-    chart = _confidence_chart(np.asarray(best_probs), class_names)
-    pdf.image(chart, x=10, w=140)
-    pdf.ln(4)
+    temp_before = temp_after = None
+    if device_info is not None:
+        temp_before, temp_after = device_info.get("temp_before_c"), device_info.get("temp_after_c")
+    has_temp_chart = temp_before is not None and temp_after is not None
+
+    _subheading(pdf, "Classification confidence & temperature change (best view)"
+                     if has_temp_chart else "Classification confidence (best view)")
+    confidence_chart = _confidence_chart(np.asarray(best_probs), class_names)
+    temperature_chart = _temperature_chart(temp_before, temp_after) if has_temp_chart else None
+    _charts_row(pdf, confidence_chart, temperature_chart)
+
+    # --- Page 2: every table ---
+    pdf.add_page()
 
     if best_mask is not None:
         _subheading(pdf, "Tumor metrics (best view)")
@@ -285,16 +369,16 @@ def build_case_pdf_report(slice_results, best_image, best_mask, overall_verdict,
     pdf.ln(4)
 
     if device_info is not None:
-        _device_performance_section(pdf, device_info)
+        _device_performance_table(pdf, device_info)
 
     _subheading(pdf, "Per-slice results")
-    pdf.set_font("Helvetica", "B", 8.5)
+    pdf.set_font("Geist", "B", 8.5)
     pdf.set_fill_color(245, 246, 248)
     pdf.cell(75, 6, "  Slice", border=1, fill=True)
     pdf.cell(45, 6, "  Predicted class", border=1, fill=True)
     pdf.cell(30, 6, "  Confidence", border=1, fill=True)
     pdf.cell(30, 6, "  Result", border=1, new_x=XPos.LMARGIN, new_y=YPos.NEXT, fill=True)
-    pdf.set_font("Helvetica", "", 8.5)
+    pdf.set_font("Geist", "", 8.5)
     for r in slice_results:
         pdf.cell(75, 6, f"  {r['filename']}", border=1)
         pdf.cell(45, 6, f"  {r['top_class'].replace('_', ' ').title()}", border=1)
@@ -302,12 +386,7 @@ def build_case_pdf_report(slice_results, best_image, best_mask, overall_verdict,
         pdf.cell(30, 6, f"  {r['verdict_kind']}", border=1, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.ln(4)
 
-    pdf.set_font("Helvetica", "I", 8.5)
-    pdf.set_text_color(120, 120, 120)
-    pdf.multi_cell(0, 4.5, "Research and demonstration tool only. Not a certified diagnostic device "
-                          "and not intended for clinical use. Findings should always be reviewed by "
-                          "a qualified radiologist.")
-    pdf.set_text_color(0, 0, 0)
+    _disclaimer(pdf)
 
     return bytes(pdf.output())
 
@@ -367,4 +446,5 @@ if __name__ == "__main__":
     assert len(case_pdf_bytes) > 1000
 
     print(f"OK - tumor report {len(pdf_bytes)} bytes, no-tumor report {len(pdf_bytes_no_seg)} bytes, "
-          f"case report {len(case_pdf_bytes)} bytes")
+          f"case report {len(case_pdf_bytes)} bytes, case report with device chart "
+          f"{len(case_pdf_bytes_with_device)} bytes")
