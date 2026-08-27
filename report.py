@@ -50,7 +50,10 @@ def _confidence_chart(probs, class_names):
     fig, ax = plt.subplots(figsize=(5.5, 2.6))
     colors = ["#27ae60" if n == "no_tumor" else "#c0392b" for n in class_names]
     labels = [n.replace("_", " ").title() for n in class_names]
-    ax.bar(labels, probs * 100, color=colors)
+    x = np.arange(len(class_names))
+    ax.bar(x, probs * 100, color=colors)
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels)
     ax.set_ylabel("Confidence (%)")
     ax.set_ylim(0, 100)
     for i, p in enumerate(probs * 100):
