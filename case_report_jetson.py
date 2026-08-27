@@ -18,6 +18,7 @@ Usage:
 
 import argparse
 import sys
+import time
 from pathlib import Path
 
 import segmentation_models_pytorch as smp
@@ -123,6 +124,7 @@ def main():
         print("Thermal zones at start: " + ", ".join(f"{n}={t:.1f}C" for n, t in zones.items()))
     print(f"Classifying {len(images)} slice(s)...\n")
 
+    inference_start = time.monotonic()
     slice_results = []
     best = None  # (rank_key, path, image, probs, top_class, top_conf, verdict_kind)
     for i, path in enumerate(images, start=1):
@@ -149,20 +151,36 @@ def main():
         print(f"\nBest view: {best_path.name} ({overall_verdict}: {best_top_class}, {best_top_conf:.1%}) - "
               "no confident tumor found across any slice, segmentation skipped.")
 
+    inference_seconds = time.monotonic() - inference_start
+    end_zones = read_thermal_zones()
+    tegra_line = read_tegrastats_line()
+
+    hottest_before = max(zones.values()) if zones else None
+    hottest_after = max(end_zones.values()) if end_zones else None
+    notes = [f"tegrastats: {tegra_line}"] if tegra_line else None
+
+    device_info = {
+        "device": f"Jetson ({device.type.upper()})",
+        "inference_seconds": inference_seconds,
+        "temp_before_c": hottest_before,
+        "temp_after_c": hottest_after,
+        "notes": notes,
+    }
+
     pdf_bytes = build_case_pdf_report(
         slice_results, best_image, best_mask, overall_verdict,
         best_top_class, best_top_conf, best_probs, CLASS_NAMES,
         args.classifier, args.segmenter if best_mask is not None else None, args.threshold,
+        device_info=device_info,
     )
     out_path = Path(args.output)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_bytes(pdf_bytes)
 
-    end_zones = read_thermal_zones()
+    print(f"\nInference time: {inference_seconds:.1f}s")
     if end_zones:
-        print("\nThermal zones at end: " + ", ".join(f"{n}={t:.1f}C" for n, t in end_zones.items()))
+        print("Thermal zones at end: " + ", ".join(f"{n}={t:.1f}C" for n, t in end_zones.items()))
 
-    tegra_line = read_tegrastats_line()
     if tegra_line:
         print(f"tegrastats snapshot: {tegra_line}")
 

@@ -18,6 +18,7 @@ Usage:
 
 import argparse
 import sys
+import time
 from pathlib import Path
 
 import segmentation_models_pytorch as smp
@@ -116,6 +117,7 @@ def main():
         print(f"SoC temp at start: {start_temp:.1f}C")
     print(f"Classifying {len(images)} slice(s)...\n")
 
+    inference_start = time.monotonic()
     slice_results = []
     best = None  # (rank_key, path, image, probs, top_class, top_conf, verdict_kind)
     for i, path in enumerate(images, start=1):
@@ -142,21 +144,33 @@ def main():
         print(f"\nBest view: {best_path.name} ({overall_verdict}: {best_top_class}, {best_top_conf:.1%}) - "
               "no confident tumor found across any slice, segmentation skipped.")
 
+    inference_seconds = time.monotonic() - inference_start
+    end_temp = read_temp_c()
+    flags = read_throttled_flags()
+
+    device_info = {
+        "device": "Raspberry Pi (CPU)",
+        "inference_seconds": inference_seconds,
+        "temp_before_c": start_temp,
+        "temp_after_c": end_temp,
+        "notes": flags or None,
+    }
+
     pdf_bytes = build_case_pdf_report(
         slice_results, best_image, best_mask, overall_verdict,
         best_top_class, best_top_conf, best_probs, CLASS_NAMES,
         args.classifier, args.segmenter if best_mask is not None else None, args.threshold,
+        device_info=device_info,
     )
     out_path = Path(args.output)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_bytes(pdf_bytes)
 
-    end_temp = read_temp_c()
+    print(f"\nInference time: {inference_seconds:.1f}s")
     if end_temp is not None:
         note = f" (started at {start_temp:.1f}C)" if start_temp is not None else ""
-        print(f"\nSoC temp at end: {end_temp:.1f}C{note}")
+        print(f"SoC temp at end: {end_temp:.1f}C{note}")
 
-    flags = read_throttled_flags()
     if flags:
         print("WARNING: throttling occurred during this run - the result above may reflect "
               "slower-than-normal inference:")

@@ -197,9 +197,40 @@ def build_pdf_report(image, verdict_kind, top_class, top_conf, probs, class_name
     return bytes(pdf.output())
 
 
+def _device_performance_section(pdf, device_info):
+    """device_info: dict with 'device' (str), 'inference_seconds' (float),
+    'temp_before_c'/'temp_after_c' (float or None), and optional 'notes'
+    (list of str, e.g. throttling warnings). Any temp field may be None if
+    unavailable on that hardware (e.g. running off-device) - rendered as
+    "n/a" rather than omitted, so the report is honest about what wasn't
+    measured.
+    """
+    _subheading(pdf, "Device & performance")
+    rows = [
+        ("Edge device", device_info["device"]),
+        ("Inference time", f"{device_info['inference_seconds']:.1f}s"),
+    ]
+    temp_before, temp_after = device_info.get("temp_before_c"), device_info.get("temp_after_c")
+    if temp_before is not None and temp_after is not None:
+        rows.append(("Temperature", f"{temp_before:.1f}C -> {temp_after:.1f}C "
+                                     f"({temp_after - temp_before:+.1f}C)"))
+    else:
+        rows.append(("Temperature", "n/a"))
+    _kv_table(pdf, rows)
+    notes = device_info.get("notes")
+    if notes:
+        pdf.ln(2)
+        pdf.set_font("Helvetica", "I", 8.5)
+        pdf.set_text_color(180, 60, 20)
+        for note in notes:
+            pdf.multi_cell(0, 4.5, f"Note: {note}")
+        pdf.set_text_color(0, 0, 0)
+    pdf.ln(3)
+
+
 def build_case_pdf_report(slice_results, best_image, best_mask, overall_verdict,
                            best_top_class, best_top_conf, best_probs, class_names,
-                           classifier_name, segmenter_name, threshold):
+                           classifier_name, segmenter_name, threshold, device_info=None):
     """One consolidated report for every slice belonging to a single case
     (e.g. one patient's scan), instead of one report per slice.
 
@@ -208,6 +239,12 @@ def build_case_pdf_report(slice_results, best_image, best_mask, overall_verdict,
     table. best_image/best_mask: the single most representative ("best
     view") slice's image and segmentation mask (best_mask is None if no
     slice was confidently a tumor, so segmentation never ran).
+
+    device_info: optional dict (see _device_performance_section) adding an
+    "edge device" section to the report - device name, inference wall-clock
+    time, and temperature before/after. Omitted entirely if None, so
+    build_case_pdf_report keeps working for any caller that doesn't have
+    this data (e.g. a non-edge run).
     """
     clf_label = display_name(classifier_name)
     seg_label = display_name(segmenter_name) if segmenter_name else None
@@ -246,6 +283,9 @@ def build_case_pdf_report(slice_results, best_image, best_mask, overall_verdict,
         ("Confidence threshold", f"{threshold:.0%}"),
     ])
     pdf.ln(4)
+
+    if device_info is not None:
+        _device_performance_section(pdf, device_info)
 
     _subheading(pdf, "Per-slice results")
     pdf.set_font("Helvetica", "B", 8.5)
@@ -303,6 +343,27 @@ if __name__ == "__main__":
         class_names, "efficientnet_b0", "deeplabv3plus", 0.70,
     )
     assert case_pdf_bytes[:4] == b"%PDF"
+
+    case_pdf_bytes_with_device = build_case_pdf_report(
+        slice_results, dummy_img, dummy_mask, "tumor", "glioma", 0.91, dummy_probs,
+        class_names, "efficientnet_b0", "deeplabv3plus", 0.70,
+        device_info={
+            "device": "Raspberry Pi 4 (CPU)", "inference_seconds": 12.4,
+            "temp_before_c": 44.1, "temp_after_c": 58.7,
+            "notes": ["currently throttled"],
+        },
+    )
+    assert case_pdf_bytes_with_device[:4] == b"%PDF"
+    assert len(case_pdf_bytes_with_device) > len(case_pdf_bytes), \
+        "device_info section didn't add any content"
+
+    case_pdf_bytes_no_temp = build_case_pdf_report(
+        slice_results, dummy_img, dummy_mask, "tumor", "glioma", 0.91, dummy_probs,
+        class_names, "efficientnet_b0", "deeplabv3plus", 0.70,
+        device_info={"device": "Jetson Nano (CUDA)", "inference_seconds": 3.2,
+                     "temp_before_c": None, "temp_after_c": None},
+    )
+    assert case_pdf_bytes_no_temp[:4] == b"%PDF"
     assert len(case_pdf_bytes) > 1000
 
     print(f"OK - tumor report {len(pdf_bytes)} bytes, no-tumor report {len(pdf_bytes_no_seg)} bytes, "
