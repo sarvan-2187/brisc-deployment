@@ -34,7 +34,10 @@ def read_tegrastats_line(timeout=3):
     """
     try:
         proc = subprocess.Popen(["tegrastats", "--interval", "500"], stdout=subprocess.PIPE, universal_newlines=True)
-    except FileNotFoundError:
+    except OSError:
+        # FileNotFoundError (binary missing, e.g. off-Jetson) or a fork()
+        # failure (ENOMEM) when the process's own memory use - e.g. 4
+        # loaded models still resident - leaves too little to fork into.
         return None
     try:
         line = proc.stdout.readline().strip()
