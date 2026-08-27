@@ -33,7 +33,7 @@ def read_tegrastats_line(timeout=3):
     None if the binary isn't on PATH (e.g. running this off-Jetson).
     """
     try:
-        proc = subprocess.Popen(["tegrastats", "--interval", "500"], stdout=subprocess.PIPE, text=True)
+        proc = subprocess.Popen(["tegrastats", "--interval", "500"], stdout=subprocess.PIPE, universal_newlines=True)
     except FileNotFoundError:
         return None
     try:
