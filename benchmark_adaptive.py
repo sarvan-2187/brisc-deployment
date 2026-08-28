@@ -1,36 +1,44 @@
-"""Publication-grade comparison of AdaptiveController against a static
-high-accuracy baseline, for a paper's abstract and Results section.
+"""Publication-grade comparison of AdaptiveController against static
+baselines, for a paper's abstract and Results section.
 
-Runs two conditions back-to-back on the same cycling demo-image test set for
-a fair comparison:
+By default runs two conditions back-to-back on the same cycling demo-image
+test set:
 
-  A - static:   EfficientNetB0 + DeepLabV3+ forced for every inference,
-                no switching allowed.
-  B - adaptive: AdaptiveController.select_pair() decides every inference,
-                using its normal thresholds and hysteresis.
+  static:   EfficientNetB0 + DeepLabV3+ forced for every inference,
+            no switching allowed.
+  adaptive: AdaptiveController.select_pair() decides every inference,
+            using its normal thresholds and hysteresis.
 
-In --duration mode, condition B is forced to run the exact same number of
-inferences condition A ended up doing (not just the same wall-clock time),
-so both conditions process an identical sequence of images in the same
-order - otherwise a faster tier fits more/different image-cycle coverage
-into the same time window, which would make the accuracy comparison
-apples-to-oranges. Each condition's summary also reports a first-pass
-(single cycle, no repeats) accuracy/F1 alongside the full-run figures,
-since any repeated image beyond the first cycle isn't an independent
-sample.
+Pass --all-pairs to run all 4 fixed classifier+segmenter combinations as
+separate static conditions (EfficientNetB0+DeepLabV3+, EfficientNetB0+UNet,
+MobileNetV3+DeepLabV3+, MobileNetV3+UNet) alongside adaptive, for a complete
+picture of where adaptive's mixed-tier usage sits relative to every fixed
+pair, not just the two tiers it switches between.
 
-Reuses benchmark.py's model loading/transforms/CLASS_NAMES, pi_thermal.py's
-thermal reads, case_report.py's classify_slice/segment_slice (the same
-classify-then-threshold-gated-segment logic the deployed app uses), and
-adaptive_controller.AdaptiveController - no logic is reimplemented here.
+In --duration mode, every condition after the first is forced to run the
+exact same number of inferences the first one ended up doing (not just the
+same wall-clock time), so all conditions process an identical sequence of
+images in the same order - otherwise a faster combination fits more/
+different image-cycle coverage into the same time window, which would make
+the accuracy comparison apples-to-oranges. Each condition's summary also
+reports a first-pass (single cycle, no repeats) accuracy/F1 alongside the
+full-run figures, since any repeated image beyond the first cycle isn't an
+independent sample.
+
+Reuses benchmark.py's model loading/transforms/CLASS_NAMES/CLASSIFIER_CHOICES/
+SEGMENTER_CHOICES, pi_thermal.py's thermal reads, case_report.py's
+classify_slice/segment_slice (the same classify-then-threshold-gated-segment
+logic the deployed app uses), and adaptive_controller.AdaptiveController - no
+logic is reimplemented here.
 
 Per-inference results go to CSV (one row per run, errors included but
 excluded from stats), a structured summary goes to
 benchmark_results/adaptive_vs_static_summary.json, a per-image breakdown
-(one row per unique image, hit/miss counts for both conditions side by
-side) goes to benchmark_results/per_image_accuracy.csv, and
-latency/temperature-over-time charts go to PNGs - all under --out-dir
-(default benchmark_results/).
+(one row per unique image, hit/miss counts for every condition side by side)
+goes to benchmark_results/per_image_accuracy.csv, a wide per-metric
+comparison goes to benchmark_results/summary_comparison.csv, and
+latency/temperature-over-time charts (one line per condition) go to PNGs -
+all under --out-dir (default benchmark_results/).
 
 Test set defaults to demo_images_200/ (200 images, 50 per class, pulled from
 the BRISC2025 test split, disjoint from demo_images/ and demo_images_50/).
@@ -46,6 +54,7 @@ Usage:
     python benchmark_adaptive.py --num-runs 10      # smoke test
     python benchmark_adaptive.py                    # full run, 5 min/condition
     python benchmark_adaptive.py --duration 120      # 2 min/condition
+    python benchmark_adaptive.py --all-pairs         # all 4 fixed pairs + adaptive
     python benchmark_adaptive.py --demo-dir demo_images --num-runs 10
         # smallest/fastest 20-image set for a quick sanity check
     python benchmark_adaptive.py --num-runs 30 --latency-threshold-ms 800 --temp-threshold-c 50
@@ -61,7 +70,7 @@ import time
 from pathlib import Path
 
 from adaptive_controller import AdaptiveController, HIGH_ACCURACY, LIGHTWEIGHT
-from benchmark import CLASS_NAMES, load_cls_model, load_seg_model
+from benchmark import CLASS_NAMES, CLASSIFIER_CHOICES, SEGMENTER_CHOICES, load_cls_model, load_seg_model
 from case_report import classify_slice, segment_slice
 from pi_thermal import read_temp_c, read_throttled_flags
 
@@ -71,6 +80,9 @@ CSV_FIELDS = [
     "temp_c", "throttled", "reason", "error",
 ]
 LIGHTWEIGHT_KEY = f"{LIGHTWEIGHT['classifier']}+{LIGHTWEIGHT['segmenter']}"
+ALL_STATIC_PAIRS = {
+    f"{c}+{s}": {"classifier": c, "segmenter": s} for c in CLASSIFIER_CHOICES for s in SEGMENTER_CHOICES
+}
 
 
 def gather_demo_images(demo_dir):
@@ -95,7 +107,7 @@ def run_inference(path, cls_models, seg_models, pair, threshold):
     return top_class, cls_latency_ms, seg_latency_ms, cls_latency_ms + seg_latency_ms
 
 
-def run_condition(images, cls_models, seg_models, threshold, duration_s, num_runs, controller):
+def run_condition(images, cls_models, seg_models, threshold, duration_s, num_runs, controller=None, forced_pair=None):
     rows = []
     errors = 0
     image_cycle = itertools.cycle(images)
@@ -110,7 +122,7 @@ def run_condition(images, cls_models, seg_models, threshold, duration_s, num_run
         i += 1
         true_class, path = next(image_cycle)
 
-        pair = controller.select_pair() if controller is not None else HIGH_ACCURACY
+        pair = controller.select_pair() if controller is not None else (forced_pair or HIGH_ACCURACY)
         reason = controller.last_reason if controller is not None else ""
 
         row = dict.fromkeys(CSV_FIELDS, None)
@@ -159,19 +171,25 @@ def per_image_breakdown(rows):
     return agg
 
 
-def write_per_image_csv(path, rows_a, rows_b):
-    agg_a, agg_b = per_image_breakdown(rows_a), per_image_breakdown(rows_b)
+def write_per_image_csv(path, condition_rows):
+    """condition_rows: list of (label, rows) tuples, in the order conditions were run."""
+    aggs = [(label, per_image_breakdown(rows)) for label, rows in condition_rows]
+    all_images = sorted(set().union(*(set(agg) for _, agg in aggs))) if aggs else []
     with open(path, "w", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["image", "true_class", "static_tested", "static_correct", "static_accuracy",
-                          "adaptive_tested", "adaptive_correct", "adaptive_accuracy"])
-        for img in sorted(set(agg_a) | set(agg_b)):
-            a = agg_a.get(img, {"true_class": None, "tested": 0, "correct": 0})
-            b = agg_b.get(img, {"true_class": None, "tested": 0, "correct": 0})
-            a_acc = f"{a['correct'] / a['tested']:.4f}" if a["tested"] else ""
-            b_acc = f"{b['correct'] / b['tested']:.4f}" if b["tested"] else ""
-            writer.writerow([img, a["true_class"] or b["true_class"],
-                              a["tested"], a["correct"], a_acc, b["tested"], b["correct"], b_acc])
+        header = ["image", "true_class"]
+        for label, _ in aggs:
+            header += [f"{label}_tested", f"{label}_correct", f"{label}_accuracy"]
+        writer.writerow(header)
+        for img in all_images:
+            true_class = None
+            values = []
+            for _, agg in aggs:
+                a = agg.get(img, {"true_class": None, "tested": 0, "correct": 0})
+                true_class = true_class or a["true_class"]
+                acc = f"{a['correct'] / a['tested']:.4f}" if a["tested"] else ""
+                values += [a["tested"], a["correct"], acc]
+            writer.writerow([img, true_class] + values)
 
 
 def format_cell(v):
@@ -272,114 +290,138 @@ def fmt_temp(t):
     return f"{t:.1f}C" if t is not None else "unavailable"
 
 
-def print_summary_table(stats_a, stats_b, delta_f1):
-    print("\n=== SUMMARY: static vs adaptive ===\n")
-    print(f"{'Metric':38s}{'Static':>14s}{'Adaptive':>14s}")
+def print_summary_table(condition_stats):
+    """condition_stats: list of (label, stats, is_adaptive) tuples, in run order."""
+    labels = [label for label, _, _ in condition_stats]
+    col_w = max(14, max(len(l) for l in labels) + 2)
+
+    def row(name, cells):
+        print(f"{name:38s}" + "".join(f"{c:>{col_w}}" for c in cells))
+
+    print("\n=== SUMMARY ===\n")
+    row("Metric", labels)
     print("Full-pipeline latency (ms):")
-    for key, label in (("mean", "  mean"), ("median", "  median"), ("p95", "  p95"),
-                        ("min", "  min"), ("max", "  max")):
-        print(f"{label:38s}{stats_a['latency_ms'][key]:14.1f}{stats_b['latency_ms'][key]:14.1f}")
-    print(f"{'Peak SoC temp':38s}{fmt_temp(stats_a['peak_temp_c']):>14s}{fmt_temp(stats_b['peak_temp_c']):>14s}")
-    print(f"{'Throttling events':38s}{stats_a['throttle_events']:14d}{stats_b['throttle_events']:14d}")
-    print(f"{'Accuracy (all runs, may repeat)':38s}{stats_a['accuracy']:14.4f}{stats_b['accuracy']:14.4f}")
-    print(f"{'F1, all runs (may repeat)':38s}{stats_a['f1_weighted']:14.4f}{stats_b['f1_weighted']:14.4f}")
-    print(f"{'Accuracy (first pass, no repeats)':38s}"
-          f"{stats_a['first_pass_accuracy']:14.4f}{stats_b['first_pass_accuracy']:14.4f}")
-    print(f"{'F1, first pass (no repeats)':38s}"
-          f"{stats_a['first_pass_f1_weighted']:14.4f}{stats_b['first_pass_f1_weighted']:14.4f}")
-    a_runs = f"{stats_a['valid_runs']}/{stats_a['runs']}/{stats_a['errors']}"
-    b_runs = f"{stats_b['valid_runs']}/{stats_b['runs']}/{stats_b['errors']}"
-    print(f"{'Runs (valid/total/errors)':38s}{a_runs:>14s}{b_runs:>14s}")
-    print(f"\nDelta-F1 (static - adaptive): {delta_f1:+.4f}")
-    print(f"Adaptive: {stats_b['pct_lightweight']:.1f}% of runs on lightweight tier, "
-          f"{stats_b['switch_events']} tier-switch event(s)")
+    for key, name in (("mean", "  mean"), ("median", "  median"), ("p95", "  p95"),
+                       ("min", "  min"), ("max", "  max")):
+        row(name, [f"{stats['latency_ms'][key]:.1f}" for _, stats, _ in condition_stats])
+    row("Peak SoC temp", [fmt_temp(stats["peak_temp_c"]) for _, stats, _ in condition_stats])
+    row("Throttling events", [str(stats["throttle_events"]) for _, stats, _ in condition_stats])
+    row("Accuracy (all runs, may repeat)", [f"{stats['accuracy']:.4f}" for _, stats, _ in condition_stats])
+    row("F1, all runs (may repeat)", [f"{stats['f1_weighted']:.4f}" for _, stats, _ in condition_stats])
+    row("Accuracy (first pass, no repeats)",
+        [f"{stats['first_pass_accuracy']:.4f}" for _, stats, _ in condition_stats])
+    row("F1, first pass (no repeats)",
+        [f"{stats['first_pass_f1_weighted']:.4f}" for _, stats, _ in condition_stats])
+    row("Runs (valid/total/errors)",
+        [f"{stats['valid_runs']}/{stats['runs']}/{stats['errors']}" for _, stats, _ in condition_stats])
+
+    for label, stats, is_adaptive in condition_stats:
+        if is_adaptive:
+            print(f"\nAdaptive ({label}): {stats['pct_lightweight']:.1f}% of runs on lightweight tier, "
+                  f"{stats['switch_events']} tier-switch event(s)")
 
 
-def build_interpretation(stats_a, stats_b, delta_f1):
-    lat_a, lat_b = stats_a["latency_ms"]["mean"], stats_b["latency_ms"]["mean"]
+def build_interpretation(condition_stats, delta_f1):
+    """condition_stats: list of (label, stats, is_adaptive) tuples. The first entry is treated as the
+    high-accuracy reference baseline; the last is expected to be the adaptive condition."""
+    reference_label, reference_stats, _ = condition_stats[0]
+    adaptive_label, adaptive_stats, _ = next(c for c in condition_stats if c[2])
+
+    lat_a, lat_b = reference_stats["latency_ms"]["mean"], adaptive_stats["latency_ms"]["mean"]
     lat_diff_pct = 100 * (lat_a - lat_b) / lat_a if lat_a else 0.0
-    peak_a, peak_b = stats_a["peak_temp_c"], stats_b["peak_temp_c"]
+    peak_a, peak_b = reference_stats["peak_temp_c"], adaptive_stats["peak_temp_c"]
 
-    if stats_a["throttle_events"] == 0 and stats_b["throttle_events"] == 0:
+    if reference_stats["throttle_events"] == 0 and adaptive_stats["throttle_events"] == 0:
         throttle_sentence = (
             f"No throttling events were detected in either condition during this run "
-            f"(peak temp {fmt_temp(peak_a)} static vs {fmt_temp(peak_b)} adaptive), so this run does not "
-            f"demonstrate a thermal-throttling avoidance benefit."
+            f"(peak temp {fmt_temp(peak_a)} {reference_label} vs {fmt_temp(peak_b)} adaptive), so this run "
+            f"does not demonstrate a thermal-throttling avoidance benefit."
         )
-    elif stats_a["throttle_events"] > stats_b["throttle_events"]:
+    elif reference_stats["throttle_events"] > adaptive_stats["throttle_events"]:
         throttle_sentence = (
-            f"The static condition hit {stats_a['throttle_events']} throttling event(s) (peak {fmt_temp(peak_a)}) "
-            f"while the adaptive condition hit {stats_b['throttle_events']} (peak {fmt_temp(peak_b)})."
+            f"The {reference_label} condition hit {reference_stats['throttle_events']} throttling event(s) "
+            f"(peak {fmt_temp(peak_a)}) while adaptive hit {adaptive_stats['throttle_events']} "
+            f"(peak {fmt_temp(peak_b)})."
         )
-    elif stats_b["throttle_events"] > stats_a["throttle_events"]:
+    elif adaptive_stats["throttle_events"] > reference_stats["throttle_events"]:
         throttle_sentence = (
-            f"The adaptive condition hit more throttling events ({stats_b['throttle_events']}, "
-            f"peak {fmt_temp(peak_b)}) than the static condition ({stats_a['throttle_events']}, "
-            f"peak {fmt_temp(peak_a)})."
+            f"Adaptive hit more throttling events ({adaptive_stats['throttle_events']}, peak {fmt_temp(peak_b)}) "
+            f"than the {reference_label} condition ({reference_stats['throttle_events']}, peak {fmt_temp(peak_a)})."
         )
     else:
         throttle_sentence = (
-            f"Both conditions hit the same number of throttling events ({stats_a['throttle_events']}; "
-            f"peak {fmt_temp(peak_a)} static vs {fmt_temp(peak_b)} adaptive)."
+            f"Both conditions hit the same number of throttling events ({reference_stats['throttle_events']}; "
+            f"peak {fmt_temp(peak_a)} {reference_label} vs {fmt_temp(peak_b)} adaptive)."
         )
 
     accuracy_note = "accuracy cost" if delta_f1 > 0 else ("no accuracy cost" if delta_f1 == 0 else "accuracy gain")
 
-    return (
-        f"Over {stats_a['runs']} static and {stats_b['runs']} adaptive runs, mean full-pipeline latency was "
-        f"{lat_a:.1f}ms (static) vs {lat_b:.1f}ms (adaptive), a {lat_diff_pct:+.1f}% change. {throttle_sentence} "
-        f"The adaptive controller ran the lightweight tier on {stats_b['pct_lightweight']:.1f}% of its runs "
-        f"across {stats_b['switch_events']} tier-switch event(s). Classification F1 (weighted) was "
-        f"{stats_a['f1_weighted']:.4f} (static, always high-accuracy tier) vs {stats_b['f1_weighted']:.4f} "
+    text = (
+        f"Over {reference_stats['runs']} {reference_label} and {adaptive_stats['runs']} adaptive runs, "
+        f"mean full-pipeline latency was {lat_a:.1f}ms ({reference_label}) vs {lat_b:.1f}ms (adaptive), "
+        f"a {lat_diff_pct:+.1f}% change. {throttle_sentence} "
+        f"The adaptive controller ran the lightweight tier on {adaptive_stats['pct_lightweight']:.1f}% of its "
+        f"runs across {adaptive_stats['switch_events']} tier-switch event(s). Classification F1 (weighted) was "
+        f"{reference_stats['f1_weighted']:.4f} ({reference_label}) vs {adaptive_stats['f1_weighted']:.4f} "
         f"(adaptive, mixed tier usage), a delta-F1 of {delta_f1:+.4f} ({accuracy_note} from adaptive switching)."
     )
 
+    others = [c for c in condition_stats if not c[2] and c[0] != reference_label]
+    if others:
+        text += " Other fixed pairs for reference: " + "; ".join(
+            f"{label} - F1 {stats['f1_weighted']:.4f}, mean latency {stats['latency_ms']['mean']:.1f}ms"
+            for label, stats, _ in others
+        ) + "."
+    return text
 
-def write_summary_csv(path, stats_a, stats_b, delta_f1):
-    rows = [("metric", "static", "adaptive")]
-    for key, label in (("mean", "latency_mean_ms"), ("median", "latency_median_ms"), ("p95", "latency_p95_ms"),
-                        ("min", "latency_min_ms"), ("max", "latency_max_ms")):
-        rows.append((label, f"{stats_a['latency_ms'][key]:.2f}", f"{stats_b['latency_ms'][key]:.2f}"))
-    rows.append(("peak_temp_c", format_cell(stats_a["peak_temp_c"]), format_cell(stats_b["peak_temp_c"])))
-    rows.append(("throttle_events", stats_a["throttle_events"], stats_b["throttle_events"]))
-    rows.append(("throttled_runs", stats_a["throttled_runs"], stats_b["throttled_runs"]))
-    rows.append(("accuracy_all_runs", f"{stats_a['accuracy']:.4f}", f"{stats_b['accuracy']:.4f}"))
-    rows.append(("f1_weighted_all_runs", f"{stats_a['f1_weighted']:.4f}", f"{stats_b['f1_weighted']:.4f}"))
-    rows.append(("accuracy_first_pass_no_repeats",
-                  f"{stats_a['first_pass_accuracy']:.4f}", f"{stats_b['first_pass_accuracy']:.4f}"))
-    rows.append(("f1_weighted_first_pass_no_repeats",
-                  f"{stats_a['first_pass_f1_weighted']:.4f}", f"{stats_b['first_pass_f1_weighted']:.4f}"))
-    rows.append(("runs_valid_total_errors",
-                  f"{stats_a['valid_runs']}/{stats_a['runs']}/{stats_a['errors']}",
-                  f"{stats_b['valid_runs']}/{stats_b['runs']}/{stats_b['errors']}"))
-    rows.append(("delta_f1_static_minus_adaptive", f"{delta_f1:.4f}", ""))
-    rows.append(("pct_runs_lightweight_tier", "", f"{stats_b['pct_lightweight']:.2f}"))
-    rows.append(("tier_switch_events", "", stats_b["switch_events"]))
+
+def write_summary_csv(path, condition_stats, delta_f1):
+    """condition_stats: list of (label, stats, is_adaptive) tuples, in run order."""
+    labels = [label for label, _, _ in condition_stats]
+    rows = [["metric"] + labels]
+
+    def row(name, values):
+        rows.append([name] + list(values))
+
+    for key, name in (("mean", "latency_mean_ms"), ("median", "latency_median_ms"), ("p95", "latency_p95_ms"),
+                       ("min", "latency_min_ms"), ("max", "latency_max_ms")):
+        row(name, [f"{stats['latency_ms'][key]:.2f}" for _, stats, _ in condition_stats])
+    row("peak_temp_c", [format_cell(stats["peak_temp_c"]) for _, stats, _ in condition_stats])
+    row("throttle_events", [stats["throttle_events"] for _, stats, _ in condition_stats])
+    row("throttled_runs", [stats["throttled_runs"] for _, stats, _ in condition_stats])
+    row("accuracy_all_runs", [f"{stats['accuracy']:.4f}" for _, stats, _ in condition_stats])
+    row("f1_weighted_all_runs", [f"{stats['f1_weighted']:.4f}" for _, stats, _ in condition_stats])
+    row("accuracy_first_pass_no_repeats", [f"{stats['first_pass_accuracy']:.4f}" for _, stats, _ in condition_stats])
+    row("f1_weighted_first_pass_no_repeats",
+        [f"{stats['first_pass_f1_weighted']:.4f}" for _, stats, _ in condition_stats])
+    row("runs_valid_total_errors",
+        [f"{stats['valid_runs']}/{stats['runs']}/{stats['errors']}" for _, stats, _ in condition_stats])
+    row("pct_runs_lightweight_tier",
+        [f"{stats['pct_lightweight']:.2f}" if is_a else "" for _, stats, is_a in condition_stats])
+    row("tier_switch_events", [stats["switch_events"] if is_a else "" for _, stats, is_a in condition_stats])
+    row("delta_f1_reference_minus_adaptive", [f"{delta_f1:.4f}"] + [""] * (len(labels) - 1))
 
     with open(path, "w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerows(rows)
+        csv.writer(f).writerows(rows)
 
 
-def save_charts(rows_a, rows_b, out_dir):
+def save_charts(condition_rows, out_dir):
+    """condition_rows: list of (label, rows) tuples, in run order."""
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
     def series(rows, key):
-        xs = [r["elapsed_s"] for r in rows if not r["error"] and r[key] is not None]
-        ys = [r[key] for r in rows if not r["error"] and r[key] is not None]
-        return xs, ys
+        pts = [(r["elapsed_s"], r[key]) for r in rows if not r["error"] and r[key] is not None]
+        return list(zip(*pts)) if pts else ([], [])
 
     for key, ylabel, title, filename in (
-        ("latency_total_ms", "Full-pipeline latency (ms)", "Latency over time: static vs adaptive",
-         "latency_over_time.png"),
-        ("temp_c", "SoC temperature (C)", "Temperature over time: static vs adaptive",
-         "temperature_over_time.png"),
+        ("latency_total_ms", "Full-pipeline latency (ms)", "Latency over time", "latency_over_time.png"),
+        ("temp_c", "SoC temperature (C)", "Temperature over time", "temperature_over_time.png"),
     ):
         fig, ax = plt.subplots(figsize=(8, 4.5))
         any_data = False
-        for rows, label in ((rows_a, "Static"), (rows_b, "Adaptive")):
+        for label, rows in condition_rows:
             xs, ys = series(rows, key)
             if xs:
                 any_data = True
@@ -408,6 +450,9 @@ def main():
                          help="Folder of <class>/*.jpg subfolders to cycle through (default: demo_images_200, "
                               "200 images; pass demo_images_50 or demo_images for smaller/faster sets)")
     parser.add_argument("--out-dir", default="benchmark_results", help="Output directory for CSVs/JSON/PNGs")
+    parser.add_argument("--all-pairs", action="store_true",
+                         help="Run all 4 fixed classifier+segmenter combinations as separate static conditions "
+                              "alongside adaptive (default: only the high-accuracy baseline vs adaptive)")
     parser.add_argument("--latency-threshold-ms", type=float, default=None,
                          help="Override AdaptiveController's latency trigger threshold (default: its own "
                               "default, 1350ms). Lower this for a demo run that forces a visible tier switch - "
@@ -430,28 +475,34 @@ def main():
         print(f"Runs per condition: {args.num_runs} (--num-runs overrides --duration)")
     else:
         print(f"Duration per condition: {args.duration:.0f}s")
+    if args.all_pairs:
+        print(f"Running all {len(ALL_STATIC_PAIRS)} fixed pairs plus adaptive")
 
     print("Loading all 4 checkpoints...")
     cls_models = {name: load_cls_model(name) for name in ("efficientnet_b0", "mobilenet_v3")}
     seg_models = {name: load_seg_model(name) for name in ("deeplabv3plus", "unet")}
 
-    print("\n=== Condition A: static (EfficientNetB0 + DeepLabV3+ forced) ===")
-    rows_a, errors_a = run_condition(images, cls_models, seg_models, args.threshold,
-                                      args.duration, args.num_runs, controller=None)
-    write_csv(out_dir / "condition_a_static.csv", rows_a)
+    static_specs = list(ALL_STATIC_PAIRS.items()) if args.all_pairs else [("static", HIGH_ACCURACY)]
 
-    # Force condition B to run the exact same number of inferences as condition A
-    # (not just the same wall-clock duration) so both conditions process an
-    # identical sequence of images in the same order - a faster tier otherwise
-    # fits more (different) image-cycle coverage into the same time window,
-    # making the accuracy comparison apples-to-oranges.
-    b_num_runs = args.num_runs if args.num_runs is not None else len(rows_a)
-    if args.num_runs is None:
-        print(f"  (condition B will run exactly {b_num_runs} inferences too, matching condition A's count, "
-              f"so both see the same image sequence)")
+    condition_rows = []   # [(label, rows), ...]
+    condition_stats = []  # [(label, stats, is_adaptive), ...]
+    reference_num_runs = args.num_runs
 
-    print("=== Condition B: adaptive (AdaptiveController) ===")
-    controller_kwargs = {"log_path": out_dir / "decision_log_condition_b.csv"}
+    for idx, (label, pair) in enumerate(static_specs):
+        print(f"\n=== Condition: {label} ===")
+        rows, errors = run_condition(images, cls_models, seg_models, args.threshold,
+                                      args.duration, reference_num_runs, controller=None, forced_pair=pair)
+        if reference_num_runs is None:
+            reference_num_runs = len(rows)
+            print(f"  (every remaining condition will run exactly {reference_num_runs} inferences too, "
+                  f"matching this one's count, so all conditions see the same image sequence)")
+        csv_name = "condition_a_static.csv" if not args.all_pairs else f"condition_{label.replace('+', '_')}.csv"
+        write_csv(out_dir / csv_name, rows)
+        condition_rows.append((label, rows))
+        condition_stats.append((label, summarize_condition(label, rows, errors, len(images)), False))
+
+    print("\n=== Condition: adaptive ===")
+    controller_kwargs = {"log_path": out_dir / "decision_log_adaptive.csv"}
     if args.latency_threshold_ms is not None:
         controller_kwargs["latency_threshold_ms"] = args.latency_threshold_ms
     if args.temp_threshold_c is not None:
@@ -461,16 +512,21 @@ def main():
               f"latency>{controller_kwargs.get('latency_threshold_ms', 'default')}ms, "
               f"temp>{controller_kwargs.get('temp_threshold_c', 'default')}C)")
     controller = AdaptiveController(**controller_kwargs)
-    rows_b, errors_b = run_condition(images, cls_models, seg_models, args.threshold,
-                                      args.duration, b_num_runs, controller=controller)
-    write_csv(out_dir / "condition_b_adaptive.csv", rows_b)
+    rows_adaptive, errors_adaptive = run_condition(images, cls_models, seg_models, args.threshold,
+                                                    args.duration, reference_num_runs, controller=controller)
+    csv_name = "condition_b_adaptive.csv" if not args.all_pairs else "condition_adaptive.csv"
+    write_csv(out_dir / csv_name, rows_adaptive)
+    condition_rows.append(("adaptive", rows_adaptive))
+    condition_stats.append(
+        ("adaptive", summarize_condition("adaptive", rows_adaptive, errors_adaptive, len(images), adaptive=True),
+         True))
 
-    stats_a = summarize_condition("Static (high-accuracy forced)", rows_a, errors_a, len(images))
-    stats_b = summarize_condition("Adaptive (AdaptiveController)", rows_b, errors_b, len(images), adaptive=True)
-    delta_f1 = stats_a["f1_weighted"] - stats_b["f1_weighted"]
-    interpretation = build_interpretation(stats_a, stats_b, delta_f1)
+    reference_label, reference_stats, _ = condition_stats[0]
+    _, adaptive_stats, _ = condition_stats[-1]
+    delta_f1 = reference_stats["f1_weighted"] - adaptive_stats["f1_weighted"]
+    interpretation = build_interpretation(condition_stats, delta_f1)
 
-    print_summary_table(stats_a, stats_b, delta_f1)
+    print_summary_table(condition_stats)
     print("\n" + interpretation)
 
     summary = {
@@ -478,27 +534,28 @@ def main():
             "duration_s": args.duration if args.num_runs is None else None,
             "num_runs": args.num_runs,
             "threshold": args.threshold,
+            "all_pairs": args.all_pairs,
             "controller_defaults": {
                 "latency_threshold_ms": controller.latency_threshold_ms,
                 "temp_threshold_c": controller.temp_threshold_c,
                 "consecutive_trigger_count": controller.consecutive_trigger_count,
             },
         },
-        "condition_a": stats_a,
-        "condition_b": stats_b,
-        "delta_f1": delta_f1,
+        "conditions": {label: stats for label, stats, _ in condition_stats},
+        "reference_label": reference_label,
+        "delta_f1_reference_minus_adaptive": delta_f1,
         "interpretation": interpretation,
     }
     with open(out_dir / "adaptive_vs_static_summary.json", "w") as f:
         json.dump(summary, f, indent=2)
-    write_summary_csv(out_dir / "summary_comparison.csv", stats_a, stats_b, delta_f1)
-    write_per_image_csv(out_dir / "per_image_accuracy.csv", rows_a, rows_b)
+    write_summary_csv(out_dir / "summary_comparison.csv", condition_stats, delta_f1)
+    write_per_image_csv(out_dir / "per_image_accuracy.csv", condition_rows)
 
-    save_charts(rows_a, rows_b, out_dir)
+    save_charts(condition_rows, out_dir)
 
-    print(f"\nWrote {out_dir / 'condition_a_static.csv'}, {out_dir / 'condition_b_adaptive.csv'}, "
-          f"{out_dir / 'summary_comparison.csv'}, {out_dir / 'per_image_accuracy.csv'}, "
-          f"{out_dir / 'adaptive_vs_static_summary.json'}, and PNG charts to {out_dir}/")
+    print(f"\nWrote per-condition CSVs, {out_dir / 'summary_comparison.csv'}, "
+          f"{out_dir / 'per_image_accuracy.csv'}, {out_dir / 'adaptive_vs_static_summary.json'}, "
+          f"and PNG charts to {out_dir}/")
 
 
 if __name__ == "__main__":
