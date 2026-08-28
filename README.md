@@ -1,8 +1,11 @@
-# BRISC Brain Tumor MRI - Streamlit Demo
+# BRISC-Edge: An Adaptive Multi-Stage Pipeline for Brain Tumor MRI Analysis on Low-Cost Edge Hardware
 
-Standalone deployment repo for the BRISC 2025 baseline models: upload an MRI slice
-(or pick a demo image) and run classification (EfficientNetB0 / MobileNetV3) or
-segmentation (UNet / DeepLabV3+).
+Standalone deployment repo: upload an MRI slice (or pick a demo image) and the
+app runs the adaptive multi-stage pipeline (classify, then segment if a tumor
+is found), built on the BRISC 2025 baseline models (EfficientNetB0 / MobileNetV3
+classifiers, UNet / DeepLabV3+ segmenters) and automatically switching between a
+high-accuracy and a lightweight model tier based on live latency and SoC
+temperature (see "Adaptive model-tier switching" below).
 
 ## Contents
 
@@ -14,8 +17,13 @@ segmentation (UNet / DeepLabV3+).
   in the companion `brain-tumor` repo - see "Wireless pipeline" below)
 - `pi_thermal.py` - shared SoC-temperature/throttle-status helpers (used by
   `benchmark.py` and `case_report.py`/`batch_infer.py`); no-ops off-Pi
+- `adaptive_controller.py` - `AdaptiveController`, switches the classifier/segmenter
+  pair between a high-accuracy and lightweight tier based on rolling latency and SoC
+  temp; used by `app.py` and `case_report.py` (see "Adaptive model-tier switching")
 - `benchmark.py` - standalone inference-latency benchmark, all 4 model combinations
   (no Streamlit needed)
+- `benchmark_adaptive.py` - stress-test comparison: static vs adaptive tier switching
+  under continuous back-to-back inference (see "Adaptive model-tier switching")
 - `case_report_jetson.py` - Jetson counterpart to `case_report.py` (used by
   `send_to_jetson.py` in the companion `brain-tumor` repo)
 - `jetson_thermal.py` - shared thermal-zone/`tegrastats` helpers for Jetson scripts;
@@ -108,6 +116,75 @@ SoC temperature rose 44.3C -> 55.0C over the full benchmark with no
 throttling (peak RSS ~676 MB with all 4 models loaded simultaneously).
 Comfortably within the 4GB/32GB budget - see `benchmark.py` to reproduce or
 re-check after any dependency/model changes.
+
+### Adaptive model-tier switching
+
+Instead of a fixed classifier/segmenter pair, `adaptive_controller.py`
+(`AdaptiveController`) can switch automatically between two tiers based on
+live signals:
+
+- **high-accuracy** - EfficientNetB0 + DeepLabV3+ (best reported accuracy,
+  slowest of the 4 combinations on the Pi)
+- **lightweight** - MobileNetV3 + UNet (~14% faster, near-identical
+  segmentation accuracy, lower classification accuracy)
+
+It switches to lightweight when the rolling average of the last N (default
+5) full-pipeline latencies exceeds `latency_threshold_ms`, or when the
+current SoC temperature (via `pi_thermal.read_temp_c`) exceeds
+`temp_threshold_c`, and switches back once both clear. To avoid flapping on
+a single borderline reading, a trigger (or its clearing) has to hold for
+`consecutive_trigger_count` (default 2) consecutive checks before the tier
+actually changes - readings in between are logged as `hysteresis_hold`.
+
+Default thresholds, and why:
+
+- `latency_threshold_ms=1350` - just above the high-accuracy pair's measured
+  p95 (1325.5ms, see the table above), so normal operation never triggers it;
+  only a real slowdown (e.g. thermal throttling) does.
+- `temp_threshold_c=65` - below `pi_thermal.py`'s existing 75C hard
+  cooldown-pause point (used by `benchmark.py`/`case_report.py`), so the
+  adaptive controller downshifts to the lighter pair with headroom to spare
+  before the hardware itself has to intervene. The benchmark run above only
+  reached 55C with no throttling, so 65C gives a real margin without being
+  so high it never fires in practice.
+- `window_size=5`, `consecutive_trigger_count=2` - small enough to react
+  within a handful of inferences, large enough that one slow or hot reading
+  doesn't flip the tier.
+
+Every `select_pair()` call appends a row (timestamp, temp, rolling-avg
+latency, chosen pair, reason) to `logs/decision_log.csv` - `logs/` is
+git-ignored since this is per-device runtime data, not something to commit.
+
+Both `app.py` (Advanced Settings) and `case_report.py` use the controller by
+default, with a manual-override path preserved for comparison runs:
+
+- `app.py` - Advanced Settings has a "Manual override (force a specific
+  pair)" checkbox. Unchecked (default), the two dropdowns disappear and a
+  status line shows the active tier and the last switch reason; checked, the
+  dropdowns come back exactly as before.
+- `case_report.py` - the existing `--classifier`/`--segmenter` flags are
+  untouched and still fully static by default (this is what `send_to_pi.py`
+  in the companion `brain-tumor` repo calls). Pass `--adaptive` to opt into
+  per-slice adaptive selection instead.
+
+#### Reproducing the stress-test comparison
+
+`benchmark_adaptive.py` runs continuous back-to-back inference for a fixed
+duration (default 3 minutes) under both conditions - static (high-accuracy
+pair forced) and adaptive (`AdaptiveController` deciding every run) - with
+no cooldown pause between runs, since provoking sustained thermal load is
+the point:
+
+```bash
+python benchmark_adaptive.py                # 3 minutes per condition
+python benchmark_adaptive.py --duration 60  # shorter run for a quick check
+```
+
+It prints a side-by-side summary (run count, mean latency, tier switches,
+throttling detected) for both conditions, and writes per-run latency/temp
+data to `logs/stress_test_static.csv` and `logs/stress_test_adaptive.csv`
+for the latency-over-time and temp-over-time charts in a paper's Results
+section.
 
 ## Run on Jetson Nano
 

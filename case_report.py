@@ -29,6 +29,7 @@ from PIL import Image
 from torchvision import transforms
 from torchvision.models import mobilenet_v3_large
 
+from adaptive_controller import AdaptiveController
 from pi_thermal import read_temp_c, read_throttled_flags, wait_for_safe_temp
 from report import build_case_pdf_report
 
@@ -94,11 +95,14 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--input", required=True, help="Folder of PNG/JPG slices, all from one case")
     parser.add_argument("--output", required=True, help="Path to write the single consolidated PDF to")
-    parser.add_argument("--classifier", default="efficientnet_b0", choices=["efficientnet_b0", "mobilenet_v3"])
+    parser.add_argument("--classifier", default="mobilenet_v3", choices=["efficientnet_b0", "mobilenet_v3"])
     parser.add_argument("--segmenter", default="deeplabv3plus", choices=["deeplabv3plus", "unet"])
     parser.add_argument("--threshold", type=float, default=0.70)
     parser.add_argument("--max-temp", type=float, default=75.0,
                          help="Pause between slices if SoC temp reaches this many C (default 75)")
+    parser.add_argument("--adaptive", action="store_true",
+                         help="Pick the classifier/segmenter pair per slice via AdaptiveController "
+                              "(rolling latency + SoC temp) instead of the fixed --classifier/--segmenter")
     args = parser.parse_args()
 
     in_dir = Path(args.input)
@@ -109,8 +113,14 @@ def main():
         print(f"No .png/.jpg/.jpeg files found in {in_dir}", file=sys.stderr)
         sys.exit(1)
 
-    print(f"Loading classifier: {args.classifier}")
-    cls_model = load_cls_model(args.classifier)
+    controller = AdaptiveController() if args.adaptive else None
+    if controller is not None:
+        print("Adaptive mode: preloading both classifiers/segmenters so tier switches don't reload from disk.")
+        cls_models = {name: load_cls_model(name) for name in ("efficientnet_b0", "mobilenet_v3")}
+        seg_models = {name: load_seg_model(name) for name in ("deeplabv3plus", "unet")}
+    else:
+        print(f"Loading classifier: {args.classifier}")
+        cls_model = load_cls_model(args.classifier)
 
     start_temp = read_temp_c()
     if start_temp is not None:
@@ -119,26 +129,39 @@ def main():
 
     inference_start = time.monotonic()
     slice_results = []
-    best = None  # (rank_key, path, image, probs, top_class, top_conf, verdict_kind)
+    best = None  # (rank_key, path, image, probs, top_class, top_conf, verdict_kind, pair)
     for i, path in enumerate(images, start=1):
         wait_for_safe_temp(args.max_temp)
-        image, probs, top_class, top_conf, verdict_kind = classify_slice(path, cls_model, args.threshold)
+        if controller is not None:
+            pair = controller.select_pair()
+            slice_model = cls_models[pair["classifier"]]
+        else:
+            pair = {"classifier": args.classifier, "segmenter": args.segmenter}
+            slice_model = cls_model
+
+        slice_start = time.perf_counter()
+        image, probs, top_class, top_conf, verdict_kind = classify_slice(path, slice_model, args.threshold)
+        if controller is not None:
+            controller.record_inference((time.perf_counter() - slice_start) * 1000)
+
         slice_results.append({
             "filename": path.name, "top_class": top_class,
             "top_conf": top_conf, "verdict_kind": verdict_kind,
+            "pair": f"{pair['classifier']}+{pair['segmenter']}",
         })
-        print(f"[{i}/{len(images)}] {path.name}: {verdict_kind} ({top_class}, {top_conf:.1%})")
+        print(f"[{i}/{len(images)}] {path.name}: {verdict_kind} ({top_class}, {top_conf:.1%}) [{pair['classifier']}]")
 
         rank_key = (TIER[verdict_kind], top_conf)
         if best is None or rank_key > best[0]:
-            best = (rank_key, path, image, probs, top_class, top_conf, verdict_kind)
+            best = (rank_key, path, image, probs, top_class, top_conf, verdict_kind, pair)
 
-    _, best_path, best_image, best_probs, best_top_class, best_top_conf, overall_verdict = best
+    _, best_path, best_image, best_probs, best_top_class, best_top_conf, overall_verdict, best_pair = best
 
     best_mask = None
     if overall_verdict == "tumor":
-        print(f"\nBest view: {best_path.name} ({best_top_class}, {best_top_conf:.1%}) - segmenting...")
-        seg_model = load_seg_model(args.segmenter)
+        print(f"\nBest view: {best_path.name} ({best_top_class}, {best_top_conf:.1%}) - "
+              f"segmenting with {best_pair['segmenter']}...")
+        seg_model = seg_models[best_pair["segmenter"]] if controller is not None else load_seg_model(args.segmenter)
         best_mask = segment_slice(best_image, seg_model)
     else:
         print(f"\nBest view: {best_path.name} ({overall_verdict}: {best_top_class}, {best_top_conf:.1%}) - "
@@ -159,7 +182,7 @@ def main():
     pdf_bytes = build_case_pdf_report(
         slice_results, best_image, best_mask, overall_verdict,
         best_top_class, best_top_conf, best_probs, CLASS_NAMES,
-        args.classifier, args.segmenter if best_mask is not None else None, args.threshold,
+        best_pair["classifier"], best_pair["segmenter"] if best_mask is not None else None, args.threshold,
         device_info=device_info,
     )
     out_path = Path(args.output)

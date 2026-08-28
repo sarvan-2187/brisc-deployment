@@ -7,6 +7,7 @@ checkpoints load cleanly.
 """
 
 import io
+import time
 from pathlib import Path
 
 import segmentation_models_pytorch as smp
@@ -19,6 +20,7 @@ from PIL import Image
 from torchvision import transforms
 from torchvision.models import mobilenet_v3_large
 
+from adaptive_controller import AdaptiveController
 from report import build_pdf_report, overlay_mask
 
 CKPT_DIR = Path("models")
@@ -107,7 +109,7 @@ def run_pipeline(image_bytes, classifier_name, segmenter_name, threshold):
     }
 
 
-st.set_page_config(page_title="BRISC Brain Tumor MRI", layout="centered")
+st.set_page_config(page_title="BRISC-Edge", layout="centered")
 
 st.markdown(
     """
@@ -137,7 +139,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-st.title("Brain Tumor MRI Analysis")
+st.title("BRISC-Edge: Brain Tumor MRI Analysis")
 st.caption("Upload or select an MRI slice. The system classifies it and segments the tumor automatically.")
 
 if "image_bytes" not in st.session_state:
@@ -181,9 +183,22 @@ if uploaded is not None:
         st.session_state.last_upload_id = upload_id
         st.session_state.just_selected = True
 
+if "adaptive_controller" not in st.session_state:
+    st.session_state.adaptive_controller = AdaptiveController()
+controller = st.session_state.adaptive_controller
+
 with st.expander("Advanced settings"):
-    classifier_name = st.selectbox("Classifier", CLASSIFIER_CHOICES)
-    segmenter_name = st.selectbox("Segmenter", SEGMENTER_CHOICES)
+    manual_override = st.checkbox("Manual override (force a specific pair)")
+    if manual_override:
+        classifier_name = st.selectbox("Classifier", CLASSIFIER_CHOICES, index=CLASSIFIER_CHOICES.index("mobilenet_v3"))
+        segmenter_name = st.selectbox("Segmenter", SEGMENTER_CHOICES, index=SEGMENTER_CHOICES.index("deeplabv3plus"))
+    else:
+        pair = controller.select_pair()
+        classifier_name, segmenter_name = pair["classifier"], pair["segmenter"]
+        st.caption(
+            f"Adaptive tier: **{controller.current_tier.replace('_', ' ')}** "
+            f"({classifier_name} + {segmenter_name}) - last switch reason: {controller.last_reason}"
+        )
     threshold = st.slider("Confidence threshold for running segmentation", 0.50, 0.95, 0.70, 0.05)
 
 if st.session_state.image_bytes is not None:
@@ -194,7 +209,10 @@ if st.session_state.image_bytes is not None:
 
     image = Image.open(io.BytesIO(st.session_state.image_bytes)).convert("RGB")
 
+    _t0 = time.perf_counter()
     result = run_pipeline(st.session_state.image_bytes, classifier_name, segmenter_name, threshold)
+    if not manual_override:
+        controller.record_inference((time.perf_counter() - _t0) * 1000)
     verdict_kind = result["verdict_kind"]
     top_class, top_conf = result["top_class"], result["top_conf"]
     mask = result["mask"]

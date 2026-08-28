@@ -1,4 +1,4 @@
-"""PDF report generation for BRISC pipeline results. No Streamlit/torch deps
+"""PDF report generation for BRISC-Edge pipeline results. No Streamlit/torch deps
 so it can be smoke-tested standalone (see __main__ below).
 """
 
@@ -211,7 +211,7 @@ def build_pdf_report(image, verdict_kind, top_class, top_conf, probs, class_name
     pdf.set_auto_page_break(auto=True, margin=20)
     pdf.add_page()
 
-    _section_title(pdf, "Brain Tumor MRI Analysis Report")
+    _section_title(pdf, "BRISC-Edge: Brain Tumor MRI Analysis Report")
     _image_row(pdf, image, mask)
     _verdict_box(pdf, verdict_kind, top_class, top_conf)
 
@@ -329,7 +329,7 @@ def build_case_pdf_report(slice_results, best_image, best_mask, overall_verdict,
     # --- Page 1: images and graphs ---
     pdf.add_page()
 
-    _section_title(pdf, "Brain Tumor MRI Case Report")
+    _section_title(pdf, "BRISC-Edge: Brain Tumor MRI Case Report")
     _verdict_box(pdf, overall_verdict, best_top_class, best_top_conf)
 
     _subheading(pdf, f"Best view ({len(slice_results)} slice(s) analyzed)")

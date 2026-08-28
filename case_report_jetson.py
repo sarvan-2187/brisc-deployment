@@ -93,7 +93,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--input", required=True, help="Folder of PNG/JPG slices, all from one case")
     parser.add_argument("--output", required=True, help="Path to write the single consolidated PDF to")
-    parser.add_argument("--classifier", default="efficientnet_b0", choices=["efficientnet_b0", "mobilenet_v3"])
+    parser.add_argument("--classifier", default="mobilenet_v3", choices=["efficientnet_b0", "mobilenet_v3"])
     parser.add_argument("--segmenter", default="deeplabv3plus", choices=["deeplabv3plus", "unet"])
     parser.add_argument("--threshold", type=float, default=0.70)
     parser.add_argument("--max-temp", type=float, default=80.0,
