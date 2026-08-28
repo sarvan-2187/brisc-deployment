@@ -267,6 +267,28 @@ def build_interpretation(stats_a, stats_b, delta_f1):
     )
 
 
+def write_summary_csv(path, stats_a, stats_b, delta_f1):
+    rows = [("metric", "static", "adaptive")]
+    for key, label in (("mean", "latency_mean_ms"), ("median", "latency_median_ms"), ("p95", "latency_p95_ms"),
+                        ("min", "latency_min_ms"), ("max", "latency_max_ms")):
+        rows.append((label, f"{stats_a['latency_ms'][key]:.2f}", f"{stats_b['latency_ms'][key]:.2f}"))
+    rows.append(("peak_temp_c", format_cell(stats_a["peak_temp_c"]), format_cell(stats_b["peak_temp_c"])))
+    rows.append(("throttle_events", stats_a["throttle_events"], stats_b["throttle_events"]))
+    rows.append(("throttled_runs", stats_a["throttled_runs"], stats_b["throttled_runs"]))
+    rows.append(("accuracy", f"{stats_a['accuracy']:.4f}", f"{stats_b['accuracy']:.4f}"))
+    rows.append(("f1_weighted", f"{stats_a['f1_weighted']:.4f}", f"{stats_b['f1_weighted']:.4f}"))
+    rows.append(("runs_valid_total_errors",
+                  f"{stats_a['valid_runs']}/{stats_a['runs']}/{stats_a['errors']}",
+                  f"{stats_b['valid_runs']}/{stats_b['runs']}/{stats_b['errors']}"))
+    rows.append(("delta_f1_static_minus_adaptive", f"{delta_f1:.4f}", ""))
+    rows.append(("pct_runs_lightweight_tier", "", f"{stats_b['pct_lightweight']:.2f}"))
+    rows.append(("tier_switch_events", "", stats_b["switch_events"]))
+
+    with open(path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerows(rows)
+
+
 def save_charts(rows_a, rows_b, out_dir):
     import matplotlib
     matplotlib.use("Agg")
@@ -368,11 +390,13 @@ def main():
     }
     with open(out_dir / "adaptive_vs_static_summary.json", "w") as f:
         json.dump(summary, f, indent=2)
+    write_summary_csv(out_dir / "summary_comparison.csv", stats_a, stats_b, delta_f1)
 
     save_charts(rows_a, rows_b, out_dir)
 
     print(f"\nWrote {out_dir / 'condition_a_static.csv'}, {out_dir / 'condition_b_adaptive.csv'}, "
-          f"{out_dir / 'adaptive_vs_static_summary.json'}, and PNG charts to {out_dir}/")
+          f"{out_dir / 'summary_comparison.csv'}, {out_dir / 'adaptive_vs_static_summary.json'}, "
+          f"and PNG charts to {out_dir}/")
 
 
 if __name__ == "__main__":
