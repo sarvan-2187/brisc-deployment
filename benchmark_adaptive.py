@@ -23,6 +23,8 @@ Usage:
     python benchmark_adaptive.py --num-runs 10      # smoke test
     python benchmark_adaptive.py                    # full run, 5 min/condition
     python benchmark_adaptive.py --duration 120      # 2 min/condition
+    python benchmark_adaptive.py --num-runs 30 --latency-threshold-ms 800 --temp-threshold-c 50
+        # demo run with lowered thresholds to force a visible tier switch
 """
 
 import argparse
@@ -334,6 +336,14 @@ def main():
                          help="Confidence threshold for running segmentation (default 0.70, matches app.py)")
     parser.add_argument("--demo-dir", default="demo_images", help="Folder of demo_images/<class>/*.jpg")
     parser.add_argument("--out-dir", default="benchmark_results", help="Output directory for CSVs/JSON/PNGs")
+    parser.add_argument("--latency-threshold-ms", type=float, default=None,
+                         help="Override AdaptiveController's latency trigger threshold (default: its own "
+                              "default, 1350ms). Lower this for a demo run that forces a visible tier switch - "
+                              "not meant for production comparisons.")
+    parser.add_argument("--temp-threshold-c", type=float, default=None,
+                         help="Override AdaptiveController's temp trigger threshold (default: its own "
+                              "default, 65C). Lower this for a demo run that forces a visible tier switch - "
+                              "not meant for production comparisons.")
     args = parser.parse_args()
 
     out_dir = Path(args.out_dir)
@@ -359,7 +369,16 @@ def main():
     write_csv(out_dir / "condition_a_static.csv", rows_a)
 
     print("=== Condition B: adaptive (AdaptiveController) ===")
-    controller = AdaptiveController(log_path=out_dir / "decision_log_condition_b.csv")
+    controller_kwargs = {"log_path": out_dir / "decision_log_condition_b.csv"}
+    if args.latency_threshold_ms is not None:
+        controller_kwargs["latency_threshold_ms"] = args.latency_threshold_ms
+    if args.temp_threshold_c is not None:
+        controller_kwargs["temp_threshold_c"] = args.temp_threshold_c
+    if controller_kwargs.keys() - {"log_path"}:
+        print(f"  (thresholds overridden for this run: "
+              f"latency>{controller_kwargs.get('latency_threshold_ms', 'default')}ms, "
+              f"temp>{controller_kwargs.get('temp_threshold_c', 'default')}C)")
+    controller = AdaptiveController(**controller_kwargs)
     rows_b, errors_b = run_condition(images, cls_models, seg_models, args.threshold,
                                       args.duration, args.num_runs, controller=controller)
     write_csv(out_dir / "condition_b_adaptive.csv", rows_b)
