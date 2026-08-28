@@ -26,8 +26,11 @@ adaptive_controller.AdaptiveController - no logic is reimplemented here.
 
 Per-inference results go to CSV (one row per run, errors included but
 excluded from stats), a structured summary goes to
-benchmark_results/adaptive_vs_static_summary.json, and latency/temperature
--over-time charts go to PNGs - all under --out-dir (default benchmark_results/).
+benchmark_results/adaptive_vs_static_summary.json, a per-image breakdown
+(one row per unique image, hit/miss counts for both conditions side by
+side) goes to benchmark_results/per_image_accuracy.csv, and
+latency/temperature-over-time charts go to PNGs - all under --out-dir
+(default benchmark_results/).
 
 Test set defaults to demo_images_200/ (200 images, 50 per class, pulled from
 the BRISC2025 test split, disjoint from demo_images/ and demo_images_50/).
@@ -143,6 +146,32 @@ def run_condition(images, cls_models, seg_models, threshold, duration_s, num_run
         rows.append(row)
 
     return rows, errors
+
+
+def per_image_breakdown(rows):
+    agg = {}
+    for r in rows:
+        if r["error"]:
+            continue
+        a = agg.setdefault(r["image"], {"true_class": r["true_class"], "tested": 0, "correct": 0})
+        a["tested"] += 1
+        a["correct"] += 1 if r["correct"] else 0
+    return agg
+
+
+def write_per_image_csv(path, rows_a, rows_b):
+    agg_a, agg_b = per_image_breakdown(rows_a), per_image_breakdown(rows_b)
+    with open(path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["image", "true_class", "static_tested", "static_correct", "static_accuracy",
+                          "adaptive_tested", "adaptive_correct", "adaptive_accuracy"])
+        for img in sorted(set(agg_a) | set(agg_b)):
+            a = agg_a.get(img, {"true_class": None, "tested": 0, "correct": 0})
+            b = agg_b.get(img, {"true_class": None, "tested": 0, "correct": 0})
+            a_acc = f"{a['correct'] / a['tested']:.4f}" if a["tested"] else ""
+            b_acc = f"{b['correct'] / b['tested']:.4f}" if b["tested"] else ""
+            writer.writerow([img, a["true_class"] or b["true_class"],
+                              a["tested"], a["correct"], a_acc, b["tested"], b["correct"], b_acc])
 
 
 def format_cell(v):
@@ -463,12 +492,13 @@ def main():
     with open(out_dir / "adaptive_vs_static_summary.json", "w") as f:
         json.dump(summary, f, indent=2)
     write_summary_csv(out_dir / "summary_comparison.csv", stats_a, stats_b, delta_f1)
+    write_per_image_csv(out_dir / "per_image_accuracy.csv", rows_a, rows_b)
 
     save_charts(rows_a, rows_b, out_dir)
 
     print(f"\nWrote {out_dir / 'condition_a_static.csv'}, {out_dir / 'condition_b_adaptive.csv'}, "
-          f"{out_dir / 'summary_comparison.csv'}, {out_dir / 'adaptive_vs_static_summary.json'}, "
-          f"and PNG charts to {out_dir}/")
+          f"{out_dir / 'summary_comparison.csv'}, {out_dir / 'per_image_accuracy.csv'}, "
+          f"{out_dir / 'adaptive_vs_static_summary.json'}, and PNG charts to {out_dir}/")
 
 
 if __name__ == "__main__":
