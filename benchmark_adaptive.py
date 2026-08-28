@@ -19,10 +19,18 @@ excluded from stats), a structured summary goes to
 benchmark_results/adaptive_vs_static_summary.json, and latency/temperature
 -over-time charts go to PNGs - all under --out-dir (default benchmark_results/).
 
+Test set defaults to demo_images_50/ (50 images, 12-13 per class, pulled from
+the BRISC2025 test split) rather than the original 20-image demo_images/ -
+large enough that accuracy/F1 differences between tiers can actually show up
+instead of both hitting 100% on a handful of easy images. Pass --demo-dir
+demo_images for the smaller/faster set (e.g. quick sanity checks).
+
 Usage:
     python benchmark_adaptive.py --num-runs 10      # smoke test
     python benchmark_adaptive.py                    # full run, 5 min/condition
     python benchmark_adaptive.py --duration 120      # 2 min/condition
+    python benchmark_adaptive.py --demo-dir demo_images --num-runs 10
+        # smaller/faster 20-image set for a quick sanity check
     python benchmark_adaptive.py --num-runs 30 --latency-threshold-ms 800 --temp-threshold-c 50
         # demo run with lowered thresholds to force a visible tier switch
 """
@@ -334,7 +342,9 @@ def main():
                          help="Fixed number of inferences per condition; overrides --duration if given")
     parser.add_argument("--threshold", type=float, default=0.70,
                          help="Confidence threshold for running segmentation (default 0.70, matches app.py)")
-    parser.add_argument("--demo-dir", default="demo_images", help="Folder of demo_images/<class>/*.jpg")
+    parser.add_argument("--demo-dir", default="demo_images_50",
+                         help="Folder of <class>/*.jpg subfolders to cycle through (default: demo_images_50, "
+                              "50 images; pass demo_images for the smaller/faster 20-image set)")
     parser.add_argument("--out-dir", default="benchmark_results", help="Output directory for CSVs/JSON/PNGs")
     parser.add_argument("--latency-threshold-ms", type=float, default=None,
                          help="Override AdaptiveController's latency trigger threshold (default: its own "
