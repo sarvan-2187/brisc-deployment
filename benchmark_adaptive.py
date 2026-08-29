@@ -63,6 +63,8 @@ Usage:
         # smaller/faster manifest for a quick sanity check
     python benchmark_adaptive.py --num-runs 30 --latency-threshold-ms 800 --temp-threshold-c 50
         # demo run with lowered thresholds to force a visible tier switch
+    python benchmark_adaptive.py --num-runs 1000 --adaptive-only
+        # skip the static baseline (e.g. already have one) and only run adaptive
 """
 
 import argparse
@@ -170,6 +172,15 @@ def run_condition(images, cls_models, seg_models, threshold, duration_s, num_run
 
         rows.append(row)
 
+        elapsed = time.monotonic() - start
+        if num_runs is not None:
+            progress = f"  {i}/{num_runs} ({100 * i / num_runs:.1f}%) - {elapsed:.0f}s elapsed"
+        else:
+            pct = min(100.0, 100 * elapsed / duration_s) if duration_s else 100.0
+            progress = f"  {i} runs - {elapsed:.0f}s/{duration_s:.0f}s ({pct:.1f}%)"
+        print(f"\r{progress}", end="", flush=True)
+
+    print()
     return rows, errors
 
 
@@ -412,7 +423,8 @@ def write_summary_csv(path, condition_stats, delta_f1):
     row("pct_runs_lightweight_tier",
         [f"{stats['pct_lightweight']:.2f}" if is_a else "" for _, stats, is_a in condition_stats])
     row("tier_switch_events", [stats["switch_events"] if is_a else "" for _, stats, is_a in condition_stats])
-    row("delta_f1_reference_minus_adaptive", [f"{delta_f1:.4f}"] + [""] * (len(labels) - 1))
+    row("delta_f1_reference_minus_adaptive",
+        [f"{delta_f1:.4f}" if delta_f1 is not None else ""] + [""] * (len(labels) - 1))
 
     with open(path, "w", newline="") as f:
         csv.writer(f).writerows(rows)
@@ -467,6 +479,11 @@ def main():
     parser.add_argument("--all-pairs", action="store_true",
                          help="Run all 4 fixed classifier+segmenter combinations as separate static conditions "
                               "alongside adaptive (default: only the high-accuracy baseline vs adaptive)")
+    parser.add_argument("--adaptive-only", action="store_true",
+                         help="Skip the static baseline condition(s) entirely and only run adaptive - e.g. "
+                              "when you already have a static baseline from a previous run and just want "
+                              "another adaptive-only pass. No delta-F1/interpretation is produced without a "
+                              "baseline to compare against. Mutually exclusive with --all-pairs.")
     parser.add_argument("--latency-threshold-ms", type=float, default=None,
                          help="Override AdaptiveController's latency trigger threshold (default: its own "
                               "default, 1350ms). Lower this for a demo run that forces a visible tier switch - "
@@ -494,13 +511,18 @@ def main():
     cls_models = {name: load_cls_model(name) for name in ("efficientnet_b0", "mobilenet_v3")}
     seg_models = {name: load_seg_model(name) for name in ("deeplabv3plus", "unet")}
 
-    static_specs = list(ALL_STATIC_PAIRS.items()) if args.all_pairs else [("static", HIGH_ACCURACY)]
+    if args.adaptive_only:
+        static_specs = []
+    elif args.all_pairs:
+        static_specs = list(ALL_STATIC_PAIRS.items())
+    else:
+        static_specs = [("static", HIGH_ACCURACY)]
 
     condition_rows = []   # [(label, rows), ...]
     condition_stats = []  # [(label, stats, is_adaptive), ...]
     reference_num_runs = args.num_runs
 
-    for idx, (label, pair) in enumerate(static_specs):
+    for label, pair in static_specs:
         print(f"\n=== Condition: {label} ===")
         rows, errors = run_condition(images, cls_models, seg_models, args.threshold,
                                       args.duration, reference_num_runs, controller=None, forced_pair=pair)
@@ -533,10 +555,17 @@ def main():
         ("adaptive", summarize_condition("adaptive", rows_adaptive, errors_adaptive, len(images), adaptive=True),
          True))
 
-    reference_label, reference_stats, _ = condition_stats[0]
-    _, adaptive_stats, _ = condition_stats[-1]
-    delta_f1 = reference_stats["f1_weighted"] - adaptive_stats["f1_weighted"]
-    interpretation = build_interpretation(condition_stats, delta_f1)
+    if len(condition_stats) > 1:
+        reference_label, reference_stats, _ = condition_stats[0]
+        _, adaptive_stats, _ = condition_stats[-1]
+        delta_f1 = reference_stats["f1_weighted"] - adaptive_stats["f1_weighted"]
+        interpretation = build_interpretation(condition_stats, delta_f1)
+    else:
+        reference_label = None
+        delta_f1 = None
+        interpretation = ("Adaptive-only run - no static baseline in this run, so no delta-F1/latency "
+                           "comparison is available. See the metrics above, or compare against a separate "
+                           "baseline run's summary_comparison.csv yourself.")
 
     print_summary_table(condition_stats)
     print("\n" + interpretation)
