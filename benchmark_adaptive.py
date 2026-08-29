@@ -1,8 +1,8 @@
 """Publication-grade comparison of AdaptiveController against static
 baselines, for a paper's abstract and Results section.
 
-By default runs two conditions back-to-back on the same cycling demo-image
-test set:
+By default runs two conditions back-to-back on the same cycling image set
+drawn from eval_sample_manifest.csv:
 
   static:   EfficientNetB0 + DeepLabV3+ forced for every inference,
             no switching allowed.
@@ -40,23 +40,27 @@ comparison goes to benchmark_results/summary_comparison.csv, and
 latency/temperature-over-time charts (one line per condition) go to PNGs -
 all under --out-dir (default benchmark_results/).
 
-Test set defaults to demo_images_200/ (200 images, 50 per class, pulled from
-the BRISC2025 test split, disjoint from demo_images/ and demo_images_50/).
-Any run under ~10-15 minutes cycles through it only 1-2x, so a per-run
-accuracy/F1 number reflects close to 200 independent samples instead of a
-handful of images repeated many times over (which lets a single hard image
-dominate the whole delta - see demo_images_50/'s known glioma/meningioma
-mixup on brisc2025_test_00004_gl_ax_t1.jpg). Pass --demo-dir demo_images_50
-or --demo-dir demo_images for the smaller/faster sets (e.g. quick sanity
-checks where you don't need a statistically meaningful accuracy number).
+Test set comes from --manifest (default eval_sample_manifest.csv) - the same
+stratified sample eval_paired_accuracy.py evaluates, built by
+eval_dataset_sample.py from the full 1000-image BRISC2025 test split. This
+script requires that manifest to already exist (run eval_dataset_sample.py
+first); it no longer falls back to the small demo_images*/ folders used
+before, since reading from the manifest's ~1000 (or however many you
+sampled) real test images avoids the file-caching bias and repeat-image
+distortion of cycling a small folder, and lets accuracy be reported under
+the same sustained/thermal conditions as the latency numbers, not just on a
+handful of easy images. Images are cycled through in manifest order,
+looping back to the start if the run needs more inferences than there are
+rows.
 
 Usage:
-    python benchmark_adaptive.py --num-runs 10      # smoke test
-    python benchmark_adaptive.py                    # full run, 5 min/condition
-    python benchmark_adaptive.py --duration 120      # 2 min/condition
-    python benchmark_adaptive.py --all-pairs         # all 4 fixed pairs + adaptive
-    python benchmark_adaptive.py --demo-dir demo_images --num-runs 10
-        # smallest/fastest 20-image set for a quick sanity check
+    python eval_dataset_sample.py --sample-size 1000   # build the manifest first
+    python benchmark_adaptive.py --num-runs 10          # smoke test
+    python benchmark_adaptive.py                        # full run, 5 min/condition
+    python benchmark_adaptive.py --duration 120          # 2 min/condition
+    python benchmark_adaptive.py --all-pairs             # all 4 fixed pairs + adaptive
+    python benchmark_adaptive.py --manifest eval_sample_manifest_smoke.csv --num-runs 10
+        # smaller/faster manifest for a quick sanity check
     python benchmark_adaptive.py --num-runs 30 --latency-threshold-ms 800 --temp-threshold-c 50
         # demo run with lowered thresholds to force a visible tier switch
 """
@@ -85,11 +89,20 @@ ALL_STATIC_PAIRS = {
 }
 
 
-def gather_demo_images(demo_dir):
-    images = []
-    for cls_name in CLASS_NAMES:
-        images.extend((cls_name, p) for p in sorted((demo_dir / cls_name).glob("*.jpg")))
-    return images
+def load_manifest_images(manifest_path):
+    path = Path(manifest_path)
+    if not path.exists():
+        raise SystemExit(
+            f"{manifest_path} not found. This script reads its test images from the sample manifest "
+            f"eval_dataset_sample.py builds - it doesn't fall back to demo_images/ anymore. Run e.g.\n"
+            f"    python eval_dataset_sample.py --sample-size 1000\n"
+            f"first, then rerun this script (or pass --manifest to point at a different manifest CSV)."
+        )
+    with open(path, newline="") as f:
+        rows = list(csv.DictReader(f))
+    if not rows:
+        raise SystemExit(f"{manifest_path} exists but has no rows.")
+    return [(r["true_class"], Path(r["image_path"])) for r in rows]
 
 
 def run_inference(path, cls_models, seg_models, pair, threshold):
@@ -446,9 +459,10 @@ def main():
                          help="Fixed number of inferences per condition; overrides --duration if given")
     parser.add_argument("--threshold", type=float, default=0.70,
                          help="Confidence threshold for running segmentation (default 0.70, matches app.py)")
-    parser.add_argument("--demo-dir", default="demo_images_200",
-                         help="Folder of <class>/*.jpg subfolders to cycle through (default: demo_images_200, "
-                              "200 images; pass demo_images_50 or demo_images for smaller/faster sets)")
+    parser.add_argument("--manifest", default="eval_sample_manifest.csv",
+                         help="Manifest CSV from eval_dataset_sample.py listing the images to cycle through "
+                              "(default eval_sample_manifest.csv) - must already exist, run "
+                              "eval_dataset_sample.py first if it doesn't")
     parser.add_argument("--out-dir", default="benchmark_results", help="Output directory for CSVs/JSON/PNGs")
     parser.add_argument("--all-pairs", action="store_true",
                          help="Run all 4 fixed classifier+segmenter combinations as separate static conditions "
@@ -466,11 +480,9 @@ def main():
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    images = gather_demo_images(Path(args.demo_dir))
-    if not images:
-        raise SystemExit(f"No demo images found under {args.demo_dir}/<class>/*.jpg")
+    images = load_manifest_images(args.manifest)
 
-    print(f"Test set: {len(images)} images across {len(CLASS_NAMES)} classes from {args.demo_dir}")
+    print(f"Test set: {len(images)} images from manifest {args.manifest}")
     if args.num_runs is not None:
         print(f"Runs per condition: {args.num_runs} (--num-runs overrides --duration)")
     else:
