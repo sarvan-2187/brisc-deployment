@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from fpdf import FPDF
 from fpdf.enums import XPos, YPos
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 
 MODEL_DISPLAY_NAMES = {
     "efficientnet_b0": "EfficientNetB0",
@@ -51,6 +51,25 @@ def overlay_mask(image, mask):
     overlay = base.copy()
     overlay[mask] = 0.5 * overlay[mask] + 0.5 * np.array([255, 0, 0])
     return Image.fromarray(overlay.astype(np.uint8))
+
+
+def annotate_result(image, mask, label_text):
+    """Single combined output image: segmentation overlay (if a mask was
+    produced) with the classification verdict captioned bottom-left.
+    """
+    base = overlay_mask(image, mask) if mask is not None else image.convert("RGB")
+    base = base.copy()
+    draw = ImageDraw.Draw(base, "RGBA")
+    font_size = max(14, base.width // 18)
+    font = ImageFont.truetype(str(FONTS_DIR / "Geist-Bold.ttf"), font_size)
+    padding = font_size // 2
+    _, _, text_w, text_h = draw.textbbox((0, 0), label_text, font=font)
+    draw.rectangle(
+        (0, base.height - text_h - 2 * padding, text_w + 2 * padding, base.height),
+        fill=(0, 0, 0, 160),
+    )
+    draw.text((padding, base.height - text_h - padding), label_text, font=font, fill=(255, 255, 255, 255))
+    return base
 
 
 def _confidence_chart(probs, class_names):
