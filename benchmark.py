@@ -15,9 +15,11 @@ Usage:
     python benchmark.py
     python benchmark.py --runs 20 --cooldown 1.0 --max-temp 70
     python benchmark.py --image demo_images/glioma/some_image.jpg
+    python benchmark.py --manifest eval_sample_manifest.csv --num-images 20 --warmup 5 --runs 100 \n        --out-csv results/micro.csv      # paper 2141 revision (E1, n = 100 over 20 images)
 """
 
 import argparse
+import csv
 import statistics
 import time
 from pathlib import Path
@@ -96,13 +98,24 @@ def time_calls(fn, warmup, runs, cooldown, max_temp):
     return times
 
 
-def summarize(label, times):
+def percentile(sorted_vals, q):
+    # Linear interpolation between closest ranks (numpy's default "linear" method).
+    pos = (len(sorted_vals) - 1) * q / 100
+    lo = int(pos)
+    hi = min(lo + 1, len(sorted_vals) - 1)
+    return sorted_vals[lo] + (sorted_vals[hi] - sorted_vals[lo]) * (pos - lo)
+
+
+def summarize(label, times, rows=None):
     ms = sorted(t * 1000 for t in times)
     mean = statistics.mean(ms)
     median = statistics.median(ms)
-    p95 = ms[min(len(ms) - 1, int(len(ms) * 0.95))]
+    p95 = percentile(ms, 95)
     print(f"{label:38s} mean {mean:7.1f} ms  median {median:7.1f} ms  "
-          f"p95 {p95:7.1f} ms  min {ms[0]:7.1f} ms  max {ms[-1]:7.1f} ms")
+          f"p95 {p95:7.1f} ms  min {ms[0]:7.1f} ms  max {ms[-1]:7.1f} ms  n {len(ms)}")
+    if rows is not None:
+        rows.append({"label": label, "n": len(ms), "mean_ms": mean, "median_ms": median,
+                     "p95_ms_linear": p95, "min_ms": ms[0], "max_ms": ms[-1]})
 
 
 def peak_memory_mb():
@@ -121,12 +134,26 @@ def main():
                          help="Seconds to sleep between each timed run (default 0.5, 0 to disable)")
     parser.add_argument("--max-temp", type=float, default=75.0,
                          help="Pause and wait if SoC temp reaches this many C (default 75)")
+    parser.add_argument("--manifest", default=None,
+                         help="Cycle timed runs over tumor images from this manifest instead of one --image")
+    parser.add_argument("--num-images", type=int, default=20,
+                         help="With --manifest: how many tumor images to cycle over, spread evenly (default 20)")
+    parser.add_argument("--out-csv", default=None, help="Also write the summary rows to this CSV")
     args = parser.parse_args()
 
-    image_path = Path(args.image) if args.image else next(Path("demo_images").rglob("*.jpg"))
-    image = Image.open(image_path).convert("RGB")
-    cls_input = cls_tf(image).unsqueeze(0)
-    seg_input = seg_tf(image).unsqueeze(0)
+    if args.manifest:
+        with open(args.manifest, newline="") as f:
+            tumor = [Path(r["image_path"]) for r in csv.DictReader(f) if r["true_class"] != "no_tumor"]
+        step = max(1, len(tumor) // args.num_images)
+        image_paths = tumor[::step][:args.num_images]
+    else:
+        image_paths = [Path(args.image) if args.image else next(Path("demo_images").rglob("*.jpg"))]
+    images = [Image.open(p).convert("RGB") for p in image_paths]
+    cls_inputs = [cls_tf(im).unsqueeze(0) for im in images]
+    seg_inputs = [seg_tf(im).unsqueeze(0) for im in images]
+    image_path = image_paths[0] if len(image_paths) == 1 else f"{len(image_paths)} images from {args.manifest}"
+    calls = {"cls": 0, "seg": 0}  # each stage cycles through the inputs independently
+    summary_rows = []
 
     start_temp = read_temp_c()
     print(f"Threads available to torch: {torch.get_num_threads()}")
@@ -150,20 +177,26 @@ def main():
     print()
 
     def run_cls(name):
+        x = cls_inputs[calls["cls"] % len(cls_inputs)]
+        calls["cls"] += 1
         with torch.no_grad():
-            cls_models[name](cls_input)
+            cls_models[name](x)
 
     def run_seg(name):
+        x = seg_inputs[calls["seg"] % len(seg_inputs)]
+        calls["seg"] += 1
         with torch.no_grad():
-            seg_models[name](seg_input)
+            seg_models[name](x)
 
     print("--- Individual models ---")
     for name in CLASSIFIER_CHOICES:
         summarize(f"Classifier: {DISPLAY_NAMES[name]}",
-                  time_calls(lambda n=name: run_cls(n), args.warmup, args.runs, args.cooldown, args.max_temp))
+                  time_calls(lambda n=name: run_cls(n), args.warmup, args.runs, args.cooldown, args.max_temp),
+                  summary_rows)
     for name in SEGMENTER_CHOICES:
         summarize(f"Segmenter: {DISPLAY_NAMES[name]}",
-                  time_calls(lambda n=name: run_seg(n), args.warmup, args.runs, args.cooldown, args.max_temp))
+                  time_calls(lambda n=name: run_seg(n), args.warmup, args.runs, args.cooldown, args.max_temp),
+                  summary_rows)
 
     print("\n--- All 4 classifier + segmenter combinations (full pipeline) ---")
     for cls_name in CLASSIFIER_CHOICES:
@@ -173,7 +206,16 @@ def main():
                 run_seg(s)
 
             label = f"{DISPLAY_NAMES[cls_name]} + {DISPLAY_NAMES[seg_name]}"
-            summarize(label, time_calls(run_pipeline, args.warmup, args.runs, args.cooldown, args.max_temp))
+            summarize(label, time_calls(run_pipeline, args.warmup, args.runs, args.cooldown, args.max_temp),
+                      summary_rows)
+
+    if args.out_csv:
+        Path(args.out_csv).parent.mkdir(parents=True, exist_ok=True)
+        with open(args.out_csv, "w", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=list(summary_rows[0]))
+            w.writeheader()
+            w.writerows(summary_rows)
+        print(f"Wrote {args.out_csv}")
 
     end_temp = read_temp_c()
     if end_temp is not None:

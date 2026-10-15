@@ -26,11 +26,21 @@ LOG_HEADER = ["timestamp", "temp_c", "avg_latency_ms", "pair", "reason"]
 class AdaptiveController:
     def __init__(self, latency_threshold_ms=1350.0, temp_threshold_c=65.0,
                  window_size=5, consecutive_trigger_count=2,
-                 log_path=Path("logs") / "decision_log.csv"):
+                 log_path=Path("logs") / "decision_log.csv",
+                 temp_release_c=60.0, temp_reader=read_temp_c):
+        # Hysteresis: switch to lightweight above temp_threshold_c (engage), but
+        # only return to high-accuracy once temp is below temp_release_c AND
+        # rolling latency is back under its threshold. temp_release_c ==
+        # temp_threshold_c reproduces the original single-threshold behaviour.
+        if temp_release_c > temp_threshold_c:
+            raise ValueError("temp_release_c must not exceed temp_threshold_c")
         self.latency_threshold_ms = latency_threshold_ms
         self.temp_threshold_c = temp_threshold_c
+        self.temp_release_c = temp_release_c
+        self.window_size = window_size
         self.consecutive_trigger_count = consecutive_trigger_count
         self.log_path = Path(log_path)
+        self._read_temp = temp_reader
 
         self._latencies = deque(maxlen=window_size)
         self._tier = "high_accuracy"
@@ -49,37 +59,37 @@ class AdaptiveController:
         return self._tier
 
     def select_pair(self):
-        temp = read_temp_c()
+        temp = self._read_temp()
         avg_latency = self.avg_latency_ms
 
         temp_trigger = temp is not None and temp > self.temp_threshold_c
         latency_trigger = avg_latency > self.latency_threshold_ms
         triggered = temp_trigger or latency_trigger
         cause = "temp_trigger" if temp_trigger else ("latency_trigger" if latency_trigger else None)
+        released = not latency_trigger and (temp is None or temp < self.temp_release_c)
 
-        if triggered:
-            self._trigger_streak += 1
-            self._clear_streak = 0
-        else:
-            self._clear_streak += 1
-            self._trigger_streak = 0
+        self._trigger_streak = self._trigger_streak + 1 if triggered else 0
+        self._clear_streak = self._clear_streak + 1 if released else 0
 
         if self._tier == "high_accuracy":
             if triggered and self._trigger_streak >= self.consecutive_trigger_count:
                 self._tier = "lightweight"
+                self._clear_streak = 0
                 reason = cause
             elif triggered:
                 reason = "hysteresis_hold"
             else:
                 reason = "nominal"
         else:
-            if not triggered and self._clear_streak >= self.consecutive_trigger_count:
+            if released and self._clear_streak >= self.consecutive_trigger_count:
                 self._tier = "high_accuracy"
+                self._trigger_streak = 0
                 reason = "nominal"
-            elif not triggered:
+            elif released:
                 reason = "hysteresis_hold"
             else:
-                reason = cause
+                # Still triggered, or in the band between release and engage.
+                reason = cause or "release_pending"
 
         pair = HIGH_ACCURACY if self._tier == "high_accuracy" else LIGHTWEIGHT
         self.last_reason = reason
@@ -143,5 +153,48 @@ if __name__ == "__main__":
         rows = log_path.read_text().strip().splitlines()
         assert len(rows) == 6  # header + 5 select_pair() calls
         assert rows[0].split(",") == LOG_HEADER
+
+        # Temperature hysteresis: engage above 65C, release only below 60C.
+        temps = []
+        hot = AdaptiveController(temp_threshold_c=65.0, temp_release_c=60.0,
+                                 temp_reader=lambda: temps.pop(0), log_path=log_path)
+
+        def step(t):
+            temps.append(t)
+            return hot.select_pair()
+
+        assert step(70) == HIGH_ACCURACY and hot.last_reason == "hysteresis_hold"   # 1st hot reading
+        assert step(70) == LIGHTWEIGHT and hot.last_reason == "temp_trigger"       # 2nd -> engage
+        # Between release and engage: below the engage point but not released.
+        for t in (62, 63, 64, 62):
+            assert step(t) == LIGHTWEIGHT and hot.last_reason == "release_pending"
+        # A borderline temperature flickering around 65C must not flip the tier.
+        for t in (64.5, 65.5, 64.5, 65.5):
+            assert step(t) == LIGHTWEIGHT
+        assert step(59) == LIGHTWEIGHT and hot.last_reason == "hysteresis_hold"     # 1st release reading
+        assert step(61) == LIGHTWEIGHT and hot.last_reason == "release_pending"     # streak broken
+        assert step(59) == LIGHTWEIGHT                                              # streak restarts
+        assert step(58) == HIGH_ACCURACY and hot.last_reason == "nominal"           # 2nd -> release
+        # Back on high-accuracy, 62C is not a trigger (below 65C engage).
+        assert step(62) == HIGH_ACCURACY and hot.last_reason == "nominal"
+
+        # Latency alone holds the lightweight tier even when the SoC is cool.
+        slow = AdaptiveController(latency_threshold_ms=1350.0, temp_release_c=60.0,
+                                  temp_reader=lambda: 50.0, log_path=log_path)
+        for _ in range(5):
+            slow.record_inference(1500)
+        slow.select_pair()
+        assert slow.select_pair() == LIGHTWEIGHT and slow.last_reason == "latency_trigger"
+        assert slow.select_pair() == LIGHTWEIGHT  # cool but still slow: not released
+        for _ in range(5):
+            slow.record_inference(1100)
+        slow.select_pair()
+        assert slow.select_pair() == HIGH_ACCURACY  # cool and fast for 2 checks
+
+        try:
+            AdaptiveController(temp_threshold_c=60.0, temp_release_c=65.0)
+            raise AssertionError("release above engage must be rejected")
+        except ValueError:
+            pass
 
     print("adaptive_controller.py self-check passed.")
