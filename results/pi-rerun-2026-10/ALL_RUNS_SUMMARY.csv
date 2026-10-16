@@ -1,0 +1,23 @@
+experiment,run,status,cooling,n,accuracy,workload_mean_ms,segmented_mean_ms,p95_ms,temp_start,temp_peak,switches,pct_lightweight,throttled_end,peak_rss_mb,swap_kb
+threshold calibration,static-H_rep1_20261016-003524,support,small fan,100,0.98,1233.4,1262.8,1269.8,44.8,62.3,0,0.0,0x0,708,0
+E3 fan on,adaptive_rep1_20261016-013031,EXCLUDED: fan switched off by mistake,small-fan,1000,0.99,1018.4,1154.6,1255.0,44.8,72.5,2,84.6,0x0,709,0
+E3 fan on,adaptive_rep2_20261016-021144,EXCLUDED: disturbed by monitoring load,small-fan,1000,0.989,1076.6,1224.3,1267.0,45.8,66.2,5,36.5,0x0,709,0
+E3 fan on,static-H_rep1_20261016-004934,used,small-fan,1000,0.991,1115.1,1258.9,1266.3,42.8,65.7,0,0.0,0x0,709,0
+E3 fan on,static-H_rep2_20261016-023403,used,small-fan,1000,0.991,1116.1,1260.2,1267.9,51.6,65.2,0,0.0,0x0,709,0
+E3 fan on,static-L_rep1_20261016-011150,used,small-fan,1000,0.992,978.7,1108.9,1116.0,44.8,66.2,0,100.0,0x0,709,0
+E3 fan on,static-L_rep2_20261016-014941,used,small-fan,1000,0.992,981.8,1112.4,1117.9,45.8,67.2,0,100.0,0x0,709,0
+E3 fan on,adaptive_rep1_20261016-033952,used,small-fan,1000,0.991,1115.4,1259.3,1266.6,51.1,64.8,0,0.0,0x0,709,0
+E3 fan on,adaptive_rep1_20261016-041432,used,small-fan,1000,0.991,1119.4,1263.6,1271.0,50.1,64.3,0,0.0,0x0,709,0
+E3 fan on,adaptive_rep1_20261016-031826,EXCLUDED: disturbed by file deployment,small-fan,1000,0.988,1091.0,1242.5,1268.6,49.7,65.7,3,25.6,0x0,709,0
+E4 freq cap (v1),adaptive_rep1_20261016-030601,used,small-fan,400,0.99,1340.8,1357.0,1497.8,51.6,63.8,6,36.5,0x0,709,0
+E4 freq cap (latency hysteresis),adaptive_rep1_20261016-040210,used,small-fan,400,0.99,1339.3,1355.6,1501.7,50.1,63.3,2,38.2,0x0,709,0
+"E5a fan off, back-to-back",adaptive_rep1_20261016-060828,used,none,1000,0.991,986.7,1119.1,1230.7,53.6,74.5,1,95.1,0x0,709,0
+"E5a fan off, back-to-back",static-H_rep1_20261016-054305,used,none,1000,0.991,1114.1,1257.7,1265.5,51.1,73.5,0,0.0,0x0,709,0
+"E5b fan off, paced 1.5 s",adaptive_rep1_20261016-065922,used,none,1000,0.994,1024.5,1151.4,1262.5,54.0,70.6,6,63.3,0x0,709,0
+"E5b fan off, paced 1.5 s",static-H_rep1_20261016-063136,used,none,1000,0.991,1118.8,1261.5,1267.7,52.1,69.6,0,0.0,0x0,709,0
+E6 fan off + co-running load,static-H_rep1_20261016-073605,used,none,700,0.9871,2832.6,2854.0,4447.7,54.0,83.3,0,0.0,0x80000,709,0
+memory probe,static-H_rep1_20261016-025310,used,small-fan,50,0.96,1254.8,1274.6,1282.8,58.4,62.8,0,0.0,0x0,709,0
+memory probe,static-H_rep1_20261016-025438,used,small-fan,50,0.96,1265.1,1285.2,1294.3,57.0,62.8,0,0.0,0x0,596,0
+smoke test,adaptive_rep1_20261016-001416,support,small fan,20,0.95,1264.5,1264.5,1276.3,48.7,56.0,0,0.0,0x0,708,0
+smoke test,static-H_rep1_20261016-001254,support,small fan,20,0.95,1262.4,1262.4,1270.3,46.3,56.0,0,0.0,0x0,709,0
+smoke test,static-L_rep1_20261016-001336,support,small fan,20,0.95,1113.8,1113.8,1122.1,47.2,57.5,0,100.0,0x0,708,0

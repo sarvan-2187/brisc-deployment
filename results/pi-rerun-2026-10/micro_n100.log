@@ -1,0 +1,27 @@
+Threads available to torch: 4
+Test image: 20 images from eval_sample_manifest.csv
+Warmup: 5  Runs: 100  Cooldown: 0.5s  Max temp: 75.0C
+SoC temp at start: 45.3C
+
+Loading all 4 checkpoints...
+  classifier: efficientnet_b0
+  classifier: mobilenet_v3
+  segmenter:  deeplabv3plus
+  segmenter:  unet
+
+--- Individual models ---
+Classifier: EfficientNetB0             mean   274.6 ms  median   269.1 ms  p95   317.9 ms  min   267.0 ms  max   322.4 ms  n 100
+Classifier: MobileNetV3                mean   177.5 ms  median   173.9 ms  p95   207.7 ms  min   173.2 ms  max   211.7 ms  n 100
+Segmenter: DeepLabV3+                  mean   979.9 ms  median   969.4 ms  p95   977.5 ms  min   960.6 ms  max  1582.8 ms  n 100
+Segmenter: UNet                        mean   909.5 ms  median   909.3 ms  p95   916.2 ms  min   895.3 ms  max   975.3 ms  n 100
+
+--- All 4 classifier + segmenter combinations (full pipeline) ---
+EfficientNetB0 + DeepLabV3+            mean  1244.4 ms  median  1241.1 ms  p95  1250.9 ms  min  1229.7 ms  max  1417.6 ms  n 100
+EfficientNetB0 + UNet                  mean  1187.2 ms  median  1180.1 ms  p95  1241.4 ms  min  1172.0 ms  max  1354.5 ms  n 100
+MobileNetV3 + DeepLabV3+               mean  1146.0 ms  median  1145.8 ms  p95  1152.1 ms  min  1137.0 ms  max  1156.9 ms  n 100
+MobileNetV3 + UNet                     mean  1089.6 ms  median  1088.2 ms  p95  1095.9 ms  min  1076.4 ms  max  1238.6 ms  n 100
+Wrote results/pi-rerun-2026-10/micro_n100.csv
+
+SoC temp at end: 50.6C (started at 45.3C)
+No throttling occurred - these numbers reflect full, unthrottled performance.
+Peak RSS this process: 714 MB (all 4 models loaded simultaneously)

@@ -1,0 +1,79 @@
+{
+  "n": 1000,
+  "accuracy": 0.991,
+  "latency_ms": {
+    "workload": {
+      "n": 1000,
+      "mean": 1118.76496,
+      "median": 1258.0,
+      "p95": 1267.703,
+      "min": 275.73,
+      "max": 2116.69
+    },
+    "segmented_path": {
+      "n": 853,
+      "mean": 1261.49,
+      "median": 1258.98,
+      "p95": 1268.046,
+      "min": 1245.95,
+      "max": 2116.69
+    },
+    "fast_path": {
+      "n": 147,
+      "mean": 290.57136054421767,
+      "median": 282.62,
+      "p95": 323.62,
+      "min": 275.73,
+      "max": 348.36
+    },
+    "cls": {
+      "n": 1000,
+      "mean": 284.78073,
+      "median": 283.25,
+      "p95": 288.455,
+      "min": 275.73,
+      "max": 523.0
+    },
+    "seg_when_run": {
+      "n": 853,
+      "mean": 977.7070105509965,
+      "median": 975.64,
+      "p95": 983.066,
+      "min": 963.36,
+      "max": 1593.69
+    }
+  },
+  "fast_path_count": 147,
+  "mean_iou_segmented": 0.7893025408610599,
+  "temp_c": {
+    "start": 52.095,
+    "mean": 64.353764,
+    "peak": 69.627
+  },
+  "throttled_hex": {
+    "start": "0x0",
+    "end": "0x0",
+    "nonzero_rows": 0
+  },
+  "min_arm_clock_hz": 1800000000,
+  "tier_switches": 0,
+  "pct_lightweight": 0.0,
+  "peak_rss_kb_vmhwm": 726076,
+  "min_mem_available_kb": 2553028,
+  "peak_swap_used_kb": 0,
+  "swap_counters": {
+    "start": {
+      "pswpin": 0,
+      "pswpout": 0
+    },
+    "end": {
+      "pswpin": 0,
+      "pswpout": 0
+    }
+  },
+  "aux_ms_mean": 3.95035,
+  "interval_ms": 1500.0,
+  "duty_cycle": 0.7458433066666666,
+  "aborted": null,
+  "wall_s": 1500.9223743639996
+}

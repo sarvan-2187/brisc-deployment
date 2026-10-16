@@ -1,0 +1,525 @@
+{
+  "e2_full": {
+    "n": 1000,
+    "mcnemar": {
+      "b_H_wrong_L_right": 7,
+      "c_L_wrong_H_right": 6,
+      "p": 1.0
+    },
+    "errors": {
+      "H": 9,
+      "L": 8
+    },
+    "shared_errors": 2,
+    "accuracy_H": {
+      "value": 0.991,
+      "wilson95": [
+        0.982984183834662,
+        0.9952579393325229
+      ]
+    },
+    "accuracy_L": {
+      "value": 0.992,
+      "wilson95": [
+        0.9842936654690199,
+        0.995940804181194
+      ]
+    },
+    "iou": {
+      "all": {
+        "n": 860,
+        "H": 0.7868780590659419,
+        "L": 0.7890067007129888,
+        "delta_H_minus_L": -0.0021286416470469582,
+        "boot95": [
+          -0.00843112164853647,
+          0.004210831783225399
+        ],
+        "wilcoxon_p": 9.687341360610903e-12,
+        "H_better_on": 302,
+        "L_better_on": 542
+      },
+      "glioma": {
+        "n": 254,
+        "H": 0.6651938711476734,
+        "L": 0.6456377807612138,
+        "delta_H_minus_L": 0.019556090386459557,
+        "boot95": [
+          0.0010110031958382839,
+          0.03863874892676032
+        ],
+        "wilcoxon_p": 0.2596802633465032,
+        "H_better_on": 126,
+        "L_better_on": 113
+      },
+      "meningioma": {
+        "n": 306,
+        "H": 0.8920256398046996,
+        "L": 0.8991523254110049,
+        "delta_H_minus_L": -0.00712668560630525,
+        "boot95": [
+          -0.010995524193187566,
+          -0.00308229213209346
+        ],
+        "wilcoxon_p": 1.0656732458379291e-16,
+        "H_better_on": 82,
+        "L_better_on": 224
+      },
+      "pituitary": {
+        "n": 300,
+        "H": 0.7826534724832097,
+        "L": 0.7980438490801822,
+        "delta_H_minus_L": -0.01539037659697251,
+        "boot95": [
+          -0.0234461391352741,
+          -0.00813239530335078
+        ],
+        "wilcoxon_p": 4.03605627206386e-09,
+        "H_better_on": 94,
+        "L_better_on": 205
+      }
+    },
+    "dice": {
+      "all": {
+        "n": 860,
+        "H": 0.8593706410468123,
+        "L": 0.8561906988059752,
+        "delta_H_minus_L": 0.0031799422408370637,
+        "boot95": [
+          -0.0035184907376246966,
+          0.009997226163552508
+        ],
+        "wilcoxon_p": 1.0906973132762275e-10,
+        "H_better_on": 302,
+        "L_better_on": 542
+      },
+      "glioma": {
+        "n": 254,
+        "H": 0.7537623051705633,
+        "L": 0.7286965513467759,
+        "delta_H_minus_L": 0.025065753823787396,
+        "boot95": [
+          0.0045196041533723695,
+          0.0462123385258794
+        ],
+        "wilcoxon_p": 0.1601021205256682,
+        "H_better_on": 126,
+        "L_better_on": 113
+      },
+      "meningioma": {
+        "n": 306,
+        "H": 0.9398785061042058,
+        "L": 0.9438028146767109,
+        "delta_H_minus_L": -0.003924308572505142,
+        "boot95": [
+          -0.007034159068761922,
+          -0.0007115803565731857
+        ],
+        "wilcoxon_p": 9.101927549540114e-17,
+        "H_better_on": 82,
+        "L_better_on": 224
+      },
+      "pituitary": {
+        "n": 300,
+        "H": 0.8666676763968286,
+        "L": 0.8747713854666138,
+        "delta_H_minus_L": -0.008103709069785192,
+        "boot95": [
+          -0.015248821826740002,
+          -0.0016112368611950621
+        ],
+        "wilcoxon_p": 1.8223487816424234e-08,
+        "H_better_on": 94,
+        "L_better_on": 205
+      }
+    }
+  },
+  "e2_dedup": {
+    "n": 897,
+    "mcnemar": {
+      "b_H_wrong_L_right": 6,
+      "c_L_wrong_H_right": 6,
+      "p": 1.0
+    },
+    "errors": {
+      "H": 8,
+      "L": 8
+    },
+    "shared_errors": 2,
+    "accuracy_H": {
+      "value": 0.9910813823857302,
+      "wilson95": [
+        0.982500522635692,
+        0.9954740048170421
+      ]
+    },
+    "accuracy_L": {
+      "value": 0.9910813823857302,
+      "wilson95": [
+        0.982500522635692,
+        0.9954740048170421
+      ]
+    },
+    "iou": {
+      "all": {
+        "n": 757,
+        "H": 0.7687659045676454,
+        "L": 0.7706811450877137,
+        "delta_H_minus_L": -0.0019152405200683065,
+        "boot95": [
+          -0.00908770727624863,
+          0.005523113838591807
+        ],
+        "wilcoxon_p": 5.23324468127837e-09,
+        "H_better_on": 268,
+        "L_better_on": 473
+      },
+      "glioma": {
+        "n": 254,
+        "H": 0.6651938711476734,
+        "L": 0.6456377807612138,
+        "delta_H_minus_L": 0.019556090386459557,
+        "boot95": [
+          0.0010110031958382839,
+          0.03863874892676032
+        ],
+        "wilcoxon_p": 0.2596802633465032,
+        "H_better_on": 126,
+        "L_better_on": 113
+      },
+      "meningioma": {
+        "n": 208,
+        "H": 0.8775783167808444,
+        "L": 0.8863727797311777,
+        "delta_H_minus_L": -0.00879446295033326,
+        "boot95": [
+          -0.014235668552350447,
+          -0.003360876860680258
+        ],
+        "wilcoxon_p": 5.106512013475828e-12,
+        "H_better_on": 50,
+        "L_better_on": 158
+      },
+      "pituitary": {
+        "n": 295,
+        "H": 0.7812212087992638,
+        "L": 0.7967731943524269,
+        "delta_H_minus_L": -0.015551985553163061,
+        "boot95": [
+          -0.02360844411195558,
+          -0.008010901151903872
+        ],
+        "wilcoxon_p": 5.660177081601268e-09,
+        "H_better_on": 92,
+        "L_better_on": 202
+      }
+    },
+    "dice": {
+      "all": {
+        "n": 757,
+        "H": 0.8460169745968907,
+        "L": 0.8421471577509708,
+        "delta_H_minus_L": 0.0038698168459199156,
+        "boot95": [
+          -0.0035917538644117284,
+          0.011620617241499705
+        ],
+        "wilcoxon_p": 5.072231753567224e-08,
+        "H_better_on": 268,
+        "L_better_on": 473
+      },
+      "glioma": {
+        "n": 254,
+        "H": 0.7537623051705633,
+        "L": 0.7286965513467759,
+        "delta_H_minus_L": 0.025065753823787396,
+        "boot95": [
+          0.0045196041533723695,
+          0.0462123385258794
+        ],
+        "wilcoxon_p": 0.1601021205256682,
+        "H_better_on": 126,
+        "L_better_on": 113
+      },
+      "meningioma": {
+        "n": 208,
+        "H": 0.9308677591135994,
+        "L": 0.935777608723508,
+        "delta_H_minus_L": -0.00490984960990859,
+        "boot95": [
+          -0.009411035475433769,
+          -0.00042255778509324833
+        ],
+        "wilcoxon_p": 4.4125787301836766e-12,
+        "H_better_on": 50,
+        "L_better_on": 158
+      },
+      "pituitary": {
+        "n": 295,
+        "H": 0.8656228147826935,
+        "L": 0.8738126500369972,
+        "delta_H_minus_L": -0.008189835254303612,
+        "boot95": [
+          -0.015421787180187566,
+          -0.0015403231723226819
+        ],
+        "wilcoxon_p": 2.55524292966079e-08,
+        "H_better_on": 92,
+        "L_better_on": 202
+      }
+    },
+    "excluded": 103
+  },
+  "softmax_matches_e2_predictions": true,
+  "tau_sweep": [
+    {
+      "tier": "H",
+      "tau": 0.5,
+      "pct_segmented": 86.0,
+      "tumor_gated_out": 0,
+      "no_tumor_segmented": 0,
+      "expected_latency_ms": 1117.314,
+      "gated_miou": 0.7868780590659419
+    },
+    {
+      "tier": "H",
+      "tau": 0.6,
+      "pct_segmented": 85.5,
+      "tumor_gated_out": 5,
+      "no_tumor_segmented": 0,
+      "expected_latency_ms": 1112.4144999999999,
+      "gated_miou": 0.7839896764360618
+    },
+    {
+      "tier": "H",
+      "tau": 0.7,
+      "pct_segmented": 85.3,
+      "tumor_gated_out": 7,
+      "no_tumor_segmented": 0,
+      "expected_latency_ms": 1110.4547,
+      "gated_miou": 0.7828779852959118
+    },
+    {
+      "tier": "H",
+      "tau": 0.8,
+      "pct_segmented": 84.9,
+      "tumor_gated_out": 11,
+      "no_tumor_segmented": 0,
+      "expected_latency_ms": 1106.5351,
+      "gated_miou": 0.7795146136054967
+    },
+    {
+      "tier": "H",
+      "tau": 0.9,
+      "pct_segmented": 83.9,
+      "tumor_gated_out": 21,
+      "no_tumor_segmented": 0,
+      "expected_latency_ms": 1096.7361,
+      "gated_miou": 0.7737363184854354
+    },
+    {
+      "tier": "H",
+      "tau": 0.95,
+      "pct_segmented": 83.1,
+      "tumor_gated_out": 29,
+      "no_tumor_segmented": 0,
+      "expected_latency_ms": 1088.8969000000002,
+      "gated_miou": 0.7670754344264977
+    },
+    {
+      "tier": "L",
+      "tau": 0.5,
+      "pct_segmented": 86.1,
+      "tumor_gated_out": 1,
+      "no_tumor_segmented": 2,
+      "expected_latency_ms": 960.5795,
+      "gated_miou": 0.788553644585258
+    },
+    {
+      "tier": "L",
+      "tau": 0.6,
+      "pct_segmented": 85.9,
+      "tumor_gated_out": 3,
+      "no_tumor_segmented": 2,
+      "expected_latency_ms": 958.7605,
+      "gated_miou": 0.787512931651119
+    },
+    {
+      "tier": "L",
+      "tau": 0.7,
+      "pct_segmented": 85.8,
+      "tumor_gated_out": 4,
+      "no_tumor_segmented": 2,
+      "expected_latency_ms": 957.851,
+      "gated_miou": 0.7863906140024413
+    },
+    {
+      "tier": "L",
+      "tau": 0.8,
+      "pct_segmented": 85.3,
+      "tumor_gated_out": 9,
+      "no_tumor_segmented": 2,
+      "expected_latency_ms": 953.3035,
+      "gated_miou": 0.7831251578901931
+    },
+    {
+      "tier": "L",
+      "tau": 0.9,
+      "pct_segmented": 85.0,
+      "tumor_gated_out": 10,
+      "no_tumor_segmented": 0,
+      "expected_latency_ms": 950.575,
+      "gated_miou": 0.7820361712652985
+    },
+    {
+      "tier": "L",
+      "tau": 0.95,
+      "pct_segmented": 84.3,
+      "tumor_gated_out": 17,
+      "no_tumor_segmented": 0,
+      "expected_latency_ms": 944.2085,
+      "gated_miou": 0.776181806682427
+    }
+  ],
+  "ece_15bin": {
+    "H": 0.0069844296574592,
+    "L": 0.00877150553464882
+  },
+  "misclassified": [
+    {
+      "filename": "brisc2025_test_00229_gl_sa_t1.jpg",
+      "true": "glioma",
+      "pred_H": "meningioma",
+      "pred_L": "meningioma",
+      "conf_H": 0.9990742206573486,
+      "conf_L": 0.9973301887512207,
+      "dup": false
+    },
+    {
+      "filename": "brisc2025_test_00151_gl_co_t1.jpg",
+      "true": "glioma",
+      "pred_H": "meningioma",
+      "pred_L": "glioma",
+      "conf_H": 0.7205854654312134,
+      "conf_L": 0.9985864162445068,
+      "dup": false
+    },
+    {
+      "filename": "brisc2025_test_00149_gl_co_t1.jpg",
+      "true": "glioma",
+      "pred_H": "meningioma",
+      "pred_L": "glioma",
+      "conf_H": 0.9248000383377075,
+      "conf_L": 0.599352240562439,
+      "dup": false
+    },
+    {
+      "filename": "brisc2025_test_00160_gl_co_t1.jpg",
+      "true": "glioma",
+      "pred_H": "meningioma",
+      "pred_L": "glioma",
+      "conf_H": 0.8615086674690247,
+      "conf_L": 0.9999949932098389,
+      "dup": false
+    },
+    {
+      "filename": "brisc2025_test_00146_gl_co_t1.jpg",
+      "true": "glioma",
+      "pred_H": "meningioma",
+      "pred_L": "glioma",
+      "conf_H": 0.9509463906288147,
+      "conf_L": 0.9887101054191589,
+      "dup": false
+    },
+    {
+      "filename": "brisc2025_test_00004_gl_ax_t1.jpg",
+      "true": "glioma",
+      "pred_H": "meningioma",
+      "pred_L": "glioma",
+      "conf_H": 0.8543520569801331,
+      "conf_L": 0.5580573678016663,
+      "dup": false
+    },
+    {
+      "filename": "brisc2025_test_00383_me_ax_t1.jpg",
+      "true": "meningioma",
+      "pred_H": "pituitary",
+      "pred_L": "meningioma",
+      "conf_H": 0.5727198123931885,
+      "conf_L": 0.9999266862869263,
+      "dup": false
+    },
+    {
+      "filename": "brisc2025_test_00394_me_co_t1.jpg",
+      "true": "meningioma",
+      "pred_H": "pituitary",
+      "pred_L": "meningioma",
+      "conf_H": 0.9623715877532959,
+      "conf_L": 0.8021389842033386,
+      "dup": true
+    },
+    {
+      "filename": "brisc2025_test_00281_me_ax_t1.jpg",
+      "true": "meningioma",
+      "pred_H": "meningioma",
+      "pred_L": "no_tumor",
+      "conf_H": 0.9597365260124207,
+      "conf_L": 0.9965041875839233,
+      "dup": false
+    },
+    {
+      "filename": "brisc2025_test_00821_pi_ax_t1.jpg",
+      "true": "pituitary",
+      "pred_H": "pituitary",
+      "pred_L": "meningioma",
+      "conf_H": 0.9999977350234985,
+      "conf_L": 0.9993919134140015,
+      "dup": false
+    },
+    {
+      "filename": "brisc2025_test_00776_pi_ax_t1.jpg",
+      "true": "pituitary",
+      "pred_H": "pituitary",
+      "pred_L": "meningioma",
+      "conf_H": 0.9974610805511475,
+      "conf_L": 0.9148669242858887,
+      "dup": false
+    },
+    {
+      "filename": "brisc2025_test_00826_pi_co_t1.jpg",
+      "true": "pituitary",
+      "pred_H": "meningioma",
+      "pred_L": "meningioma",
+      "conf_H": 0.9985573887825012,
+      "conf_L": 0.999991774559021,
+      "dup": false
+    },
+    {
+      "filename": "brisc2025_test_00715_pi_ax_t1.jpg",
+      "true": "pituitary",
+      "pred_H": "pituitary",
+      "pred_L": "meningioma",
+      "conf_H": 0.9990555644035339,
+      "conf_L": 0.9793526530265808,
+      "dup": false
+    },
+    {
+      "filename": "brisc2025_test_00612_no_ax_t1.jpg",
+      "true": "no_tumor",
+      "pred_H": "no_tumor",
+      "pred_L": "meningioma",
+      "conf_H": 1.0,
+      "conf_L": 0.8325961828231812,
+      "dup": false
+    },
+    {
+      "filename": "brisc2025_test_00609_no_ax_t1.jpg",
+      "true": "no_tumor",
+      "pred_H": "no_tumor",
+      "pred_L": "meningioma",
+      "conf_H": 0.9954753518104553,
+      "conf_L": 0.8256087303161621,
+      "dup": false
+    }
+  ]
+}

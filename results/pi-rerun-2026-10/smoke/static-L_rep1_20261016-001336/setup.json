@@ -1,0 +1,82 @@
+{
+  "argv": [
+    "rerun_2141.py",
+    "run",
+    "--mode",
+    "static-L",
+    "--num-runs",
+    "20",
+    "--out",
+    "results/smoke",
+    "--cooling",
+    "small fan",
+    "--ambient-c",
+    "27.5"
+  ],
+  "started": "2026-10-16 00:13:40",
+  "platform": "Linux-6.18.50+rpt-rpi-v8-aarch64-with-glibc2.41",
+  "python": "3.13.5",
+  "packages": {
+    "torch": "2.14.1+cpu",
+    "torchvision": "0.29.1+cpu",
+    "timm": "1.0.30",
+    "segmentation_models_pytorch": "0.5.0"
+  },
+  "torch_threads": 4,
+  "governor": "ondemand",
+  "cpuinfo_max_freq_khz": "1800000",
+  "arm_freq": "arm_freq=1800",
+  "swap": {
+    "swapon": null,
+    "dphys": null,
+    "zram": null
+  },
+  "git_commit": "f82f8c85339db00a7bd9c4e7b1b9fa537c975722",
+  "checkpoints_sha256": {
+    "deeplabv3plus_best.pt": "74b92232d5d47694698cb0f93149aca4d1aad947449549bcf379ec3d689bb84f",
+    "efficientnet_b0_best.pt": "6a9ed0bdee283ea50168976b9e3b1edb7d0a49444d0ee49fa8ad474c8879a20a",
+    "mobilenet_v3_best.pt": "6142a58a8042e1efa5b4c64ec1b9140b36903c5d8b3e3e2d9b6308a7522b38ca",
+    "unet_best.pt": "078f129cf5a765c5ed6aadb9a01e728530ee2b283faf679863a3f8787f3cf708"
+  },
+  "gate_threshold": 0.7,
+  "controller": null,
+  "manifest": "eval_sample_manifest.csv",
+  "manifest_sha256": "7517343ff0932f7c56da972f5e54c9ee6751de91f8b9e73422c1931007f9a187",
+  "slice_order": [
+    "brisc2025_test_00164_gl_co_t1.jpg",
+    "brisc2025_test_00029_gl_ax_t1.jpg",
+    "brisc2025_test_00007_gl_ax_t1.jpg",
+    "brisc2025_test_00190_gl_sa_t1.jpg",
+    "brisc2025_test_00071_gl_ax_t1.jpg",
+    "brisc2025_test_00063_gl_ax_t1.jpg",
+    "brisc2025_test_00058_gl_ax_t1.jpg",
+    "brisc2025_test_00036_gl_ax_t1.jpg",
+    "brisc2025_test_00189_gl_sa_t1.jpg",
+    "brisc2025_test_00027_gl_ax_t1.jpg",
+    "brisc2025_test_00174_gl_sa_t1.jpg",
+    "brisc2025_test_00251_gl_sa_t1.jpg",
+    "brisc2025_test_00229_gl_sa_t1.jpg",
+    "brisc2025_test_00140_gl_co_t1.jpg",
+    "brisc2025_test_00023_gl_ax_t1.jpg",
+    "brisc2025_test_00152_gl_co_t1.jpg",
+    "brisc2025_test_00109_gl_co_t1.jpg",
+    "brisc2025_test_00009_gl_ax_t1.jpg",
+    "brisc2025_test_00008_gl_ax_t1.jpg",
+    "brisc2025_test_00024_gl_ax_t1.jpg"
+  ],
+  "start_temp_c": 47.225,
+  "start_throttled_hex": "0x0",
+  "start_swap": {
+    "pswpin": 0,
+    "pswpout": 0
+  },
+  "ambient_c": 27.5,
+  "cooling": "small fan",
+  "notes": null,
+  "freq_cap": {
+    "at": null,
+    "khz": 1200000,
+    "restore_at": null
+  },
+  "preload": "all"
+}

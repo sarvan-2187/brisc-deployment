@@ -1,0 +1,21 @@
+timestamp,temp_c,avg_latency_ms,pair,reason
+2026-10-16 00:14:21,48.7,0.0,efficientnet_b0+deeplabv3plus,nominal
+2026-10-16 00:14:23,50.6,1344.0,efficientnet_b0+deeplabv3plus,nominal
+2026-10-16 00:14:24,53.1,1298.6,efficientnet_b0+deeplabv3plus,nominal
+2026-10-16 00:14:25,52.6,1285.8,efficientnet_b0+deeplabv3plus,nominal
+2026-10-16 00:14:26,54.0,1278.6,efficientnet_b0+deeplabv3plus,nominal
+2026-10-16 00:14:28,55.5,1274.5,efficientnet_b0+deeplabv3plus,nominal
+2026-10-16 00:14:29,56.0,1256.6,efficientnet_b0+deeplabv3plus,nominal
+2026-10-16 00:14:30,55.5,1256.9,efficientnet_b0+deeplabv3plus,nominal
+2026-10-16 00:14:32,56.0,1256.4,efficientnet_b0+deeplabv3plus,nominal
+2026-10-16 00:14:33,52.6,1257.6,efficientnet_b0+deeplabv3plus,nominal
+2026-10-16 00:14:34,53.1,1257.5,efficientnet_b0+deeplabv3plus,nominal
+2026-10-16 00:14:35,53.6,1258.2,efficientnet_b0+deeplabv3plus,nominal
+2026-10-16 00:14:37,53.1,1259.8,efficientnet_b0+deeplabv3plus,nominal
+2026-10-16 00:14:38,53.6,1260.5,efficientnet_b0+deeplabv3plus,nominal
+2026-10-16 00:14:39,53.6,1261.9,efficientnet_b0+deeplabv3plus,nominal
+2026-10-16 00:14:40,54.0,1263.6,efficientnet_b0+deeplabv3plus,nominal
+2026-10-16 00:14:42,53.6,1263.7,efficientnet_b0+deeplabv3plus,nominal
+2026-10-16 00:14:43,54.5,1264.3,efficientnet_b0+deeplabv3plus,nominal
+2026-10-16 00:14:44,55.0,1263.4,efficientnet_b0+deeplabv3plus,nominal
+2026-10-16 00:14:45,55.0,1263.9,efficientnet_b0+deeplabv3plus,nominal

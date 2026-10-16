@@ -51,7 +51,7 @@ FIELDS = [
     "cls_ms", "seg_ms", "total_ms", *[f"p_{c}" for c in CLASS_NAMES], "pred", "correct", "gated",
     "iou", "dice", "soc_temp_c", "arm_clock_hz", "throttled_hex", "rss_kb", "vmhwm_kb",
     "mem_available_kb", "swap_used_kb", "controller_state", "trigger_reason", "rolling_latency_ms",
-    "aux_ms", "event",
+    "aux_ms", "idle_ms", "event",
 ]
 THROTTLE_EVERY = 25
 CPUFREQ = "/sys/devices/system/cpu/cpu{}/cpufreq/{}"
@@ -110,6 +110,27 @@ def set_max_freq(khz):
                        stdout=subprocess.DEVNULL, check=True)
 
 
+# A co-running CPU-heavy process (stands in for other software on the same device):
+# single-threaded float matrix multiplication in a loop.
+HEATER = "import numpy as np\na = np.random.rand(256, 256)\nwhile True:\n    a = a @ a\n    a /= a.max()\n"
+
+
+def start_background_load(n):
+    env = {**__import__("os").environ, "OMP_NUM_THREADS": "1", "OPENBLAS_NUM_THREADS": "1"}
+    return [subprocess.Popen([sys.executable, "-c", HEATER], env=env,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) for _ in range(n)]
+
+
+def stop_background_load(procs):
+    for p in procs:
+        p.terminate()
+    for p in procs:
+        try:
+            p.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            p.kill()
+
+
 def sha256(path):
     h = hashlib.sha256()
     with open(path, "rb") as f:
@@ -138,14 +159,16 @@ def setup_info(args, rows, controller):
         "gate_threshold": args.threshold,
         "controller": None if controller is None else {
             "latency_threshold_ms": controller.latency_threshold_ms, "temp_engage_c": controller.temp_threshold_c,
-            "temp_release_c": controller.temp_release_c, "window_size": controller.window_size,
+            "temp_release_c": controller.temp_release_c, "latency_release_ms": controller.latency_release_ms,
+            "window_size": controller.window_size,
             "consecutive_checks": controller.consecutive_trigger_count, "checked": "before every inference"},
         "manifest": args.manifest, "manifest_sha256": sha256(args.manifest),
         "slice_order": [r["filename"] for r in rows],
         "start_temp_c": read_temp_c(), "start_throttled_hex": throttled_hex(), "start_swap": swap_counters(),
         "ambient_c": args.ambient_c, "cooling": args.cooling, "notes": args.notes,
         "freq_cap": {"at": args.freq_cap_at, "khz": args.freq_cap_khz, "restore_at": args.freq_restore_at},
-        "preload": args.preload,
+        "background_load": {"at": args.load_at, "procs": args.load_procs, "stop": args.load_stop},
+        "preload": args.preload, "interval_ms": args.interval_ms, "warmup_per_tier": args.warmup,
     }
 
 
@@ -184,6 +207,9 @@ def summarize(log, setup, end):
         "peak_swap_used_kb": max((r["swap_used_kb"] for r in mem), default=None),
         "swap_counters": {"start": setup["start_swap"], "end": end["swap"]},
         "aux_ms_mean": statistics.mean(r["aux_ms"] for r in ok) if ok else None,
+        "interval_ms": setup["interval_ms"],
+        "duty_cycle": (statistics.mean(r["total_ms"] / setup["interval_ms"] for r in ok)
+                       if setup["interval_ms"] and ok else None),
         "aborted": end["aborted"], "wall_s": end["wall_s"],
     }
 
@@ -205,16 +231,24 @@ def cmd_run(args):
     cls_models = {p["classifier"]: load_cls_model(p["classifier"]) for p in needed}
     seg_models = {p["segmenter"]: load_seg_model(p["segmenter"]) for p in needed}
 
+    # Untimed warm-up per loaded tier (first inferences after loading are slow from lazy init),
+    # so neither the logged latency nor the controller's rolling mean sees start-up cost.
+    for _ in range(args.warmup):
+        for p in needed:
+            img, _, _, _, _ = classify_slice(Path(rows[0]["image_path"]), cls_models[p["classifier"]], args.threshold)
+            segment_slice(img, seg_models[p["segmenter"]])
     setup = setup_info(args, rows, controller)
     (out / "setup.json").write_text(json.dumps(setup, indent=2))
 
     log, capped, aborted = [], False, None
+    heaters = []
     t_start = time.monotonic()
     f = open(out / "inferences.csv", "w", newline="")
     writer = csv.DictWriter(f, fieldnames=FIELDS)
     writer.writeheader()
     try:
         for idx, r in enumerate(rows):
+            slot = time.perf_counter()  # paced mode: each slice starts interval_ms after the last
             event = ""
             if args.freq_cap_at is not None and idx == args.freq_cap_at:
                 set_max_freq(args.freq_cap_khz)
@@ -222,6 +256,12 @@ def cmd_run(args):
             if capped and args.freq_restore_at is not None and idx == args.freq_restore_at:
                 set_max_freq(setup["cpuinfo_max_freq_khz"])
                 capped, event = False, "freq_restore"
+            if args.load_at is not None and idx == args.load_at:
+                heaters = start_background_load(args.load_procs)
+                event = f"load_start_{args.load_procs}procs"
+            if heaters and args.load_stop is not None and idx == args.load_stop:
+                stop_background_load(heaters)
+                heaters, event = [], "load_stop"
 
             pair = controller.select_pair() if controller else pair_fixed
             tier = "high_accuracy" if pair == HIGH_ACCURACY else "lightweight"
@@ -259,6 +299,8 @@ def cmd_run(args):
                 "event": event,
             }
             row["aux_ms"] = round((time.perf_counter() - ta) * 1000, 2)
+            idle = max(0.0, args.interval_ms / 1000 - (time.perf_counter() - slot)) if args.interval_ms else 0.0
+            row["idle_ms"] = round(idle * 1000, 2)
             writer.writerow(row)
             f.flush()
             log.append(row)
@@ -268,10 +310,13 @@ def cmd_run(args):
                 aborted = f"SoC {temp:.1f}C > {args.abort_c}C at idx {idx}"
                 print(f"\nABORT: {aborted}")
                 break
+            if idle:
+                time.sleep(idle)
     finally:
         f.close()
         if capped:
             set_max_freq(setup["cpuinfo_max_freq_khz"])
+        stop_background_load(heaters)
     print()
 
     end = {"throttled_hex": throttled_hex(), "swap": swap_counters(), "vmhwm_kb": memory()["vmhwm_kb"],
@@ -319,7 +364,15 @@ def cmd_matrix(args):
         cmd = [sys.executable, __file__, "run", "--mode", mode, "--rep", str(reps[mode]),
                "--num-runs", str(args.num_runs), "--manifest", args.manifest, "--out", args.out,
                "--threshold", str(args.threshold), "--cooling", args.cooling or "",
-               "--notes", f"matrix baseline {baseline}C; {args.notes or ''}"]
+               "--notes", f"matrix baseline {baseline}C; {args.notes or ''}",
+               "--latency-threshold-ms", str(args.latency_threshold_ms),
+               "--temp-engage-c", str(args.temp_engage_c), "--temp-release-c", str(args.temp_release_c)]
+        if args.interval_ms is not None:
+            cmd += ["--interval-ms", str(args.interval_ms)]
+        if args.load_at is not None:
+            cmd += ["--load-at", str(args.load_at), "--load-procs", str(args.load_procs)]
+            if args.load_stop is not None:
+                cmd += ["--load-stop", str(args.load_stop)]
         if args.ambient_c is not None:
             cmd += ["--ambient-c", str(args.ambient_c)]
         subprocess.run(cmd, check=True)
@@ -366,7 +419,7 @@ def main():
     r.add_argument("--mode", choices=list(MODES), required=True)
     r.add_argument("--rep", type=int, default=1)
     r.add_argument("--preload", choices=["all", "tier"], default="all")
-    r.add_argument("--latency-threshold-ms", type=float, default=1350.0)
+    r.add_argument("--latency-threshold-ms", type=float, default=1300.0)
     r.add_argument("--temp-engage-c", type=float, default=65.0)
     r.add_argument("--temp-release-c", type=float, default=60.0)
     r.add_argument("--window", type=int, default=5)
@@ -374,6 +427,12 @@ def main():
     r.add_argument("--freq-cap-khz", type=int, default=1200000)
     r.add_argument("--freq-restore-at", type=int, default=None)
     r.add_argument("--abort-c", type=float, default=84.0)
+    r.add_argument("--load-at", type=int, default=None, help="start a co-running CPU load at this slice index")
+    r.add_argument("--load-procs", type=int, default=4, help="number of background load processes (default 4)")
+    r.add_argument("--load-stop", type=int, default=None, help="stop the background load at this slice index")
+    r.add_argument("--warmup", type=int, default=3, help="untimed warm-up inferences per loaded tier (default 3)")
+    r.add_argument("--interval-ms", type=float, default=None,
+                   help="paced load: start a new slice every N ms (idle in between) instead of back to back")
 
     m = sub.add_parser("matrix")
     common(m)
@@ -382,6 +441,13 @@ def main():
     m.add_argument("--idle-minutes", type=float, default=10)
     m.add_argument("--tolerance-c", type=float, default=1.0)
     m.add_argument("--max-wait-s", type=float, default=2400)
+    m.add_argument("--latency-threshold-ms", type=float, default=1300.0)
+    m.add_argument("--temp-engage-c", type=float, default=65.0)
+    m.add_argument("--temp-release-c", type=float, default=60.0)
+    m.add_argument("--interval-ms", type=float, default=None, help="paced load for every run (see run --interval-ms)")
+    m.add_argument("--load-at", type=int, default=None, help="co-running CPU load start index for every run")
+    m.add_argument("--load-procs", type=int, default=4)
+    m.add_argument("--load-stop", type=int, default=None)
 
     h = sub.add_parser("handoff")
     h.add_argument("--manifest", default="eval_sample_manifest.csv")

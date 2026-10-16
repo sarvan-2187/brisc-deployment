@@ -24,17 +24,21 @@ LOG_HEADER = ["timestamp", "temp_c", "avg_latency_ms", "pair", "reason"]
 
 
 class AdaptiveController:
-    def __init__(self, latency_threshold_ms=1350.0, temp_threshold_c=65.0,
+    def __init__(self, latency_threshold_ms=1300.0, temp_threshold_c=65.0,
                  window_size=5, consecutive_trigger_count=2,
                  log_path=Path("logs") / "decision_log.csv",
-                 temp_release_c=60.0, temp_reader=read_temp_c):
-        # Hysteresis: switch to lightweight above temp_threshold_c (engage), but
-        # only return to high-accuracy once temp is below temp_release_c AND
-        # rolling latency is back under its threshold. temp_release_c ==
-        # temp_threshold_c reproduces the original single-threshold behaviour.
-        if temp_release_c > temp_threshold_c:
-            raise ValueError("temp_release_c must not exceed temp_threshold_c")
+                 temp_release_c=60.0, temp_reader=read_temp_c, latency_release_ms=None):
+        # Hysteresis on both signals: switch to lightweight when rolling latency
+        # exceeds latency_threshold_ms or temp exceeds temp_threshold_c (engage),
+        # but only return to high-accuracy once latency is at or below
+        # latency_release_ms (default 95% of the threshold) AND temp is below
+        # temp_release_c. Release == engage reproduces single-threshold behaviour.
+        if latency_release_ms is None:
+            latency_release_ms = 0.95 * latency_threshold_ms
+        if temp_release_c > temp_threshold_c or latency_release_ms > latency_threshold_ms:
+            raise ValueError("release thresholds must not exceed engage thresholds")
         self.latency_threshold_ms = latency_threshold_ms
+        self.latency_release_ms = latency_release_ms
         self.temp_threshold_c = temp_threshold_c
         self.temp_release_c = temp_release_c
         self.window_size = window_size
@@ -66,7 +70,7 @@ class AdaptiveController:
         latency_trigger = avg_latency > self.latency_threshold_ms
         triggered = temp_trigger or latency_trigger
         cause = "temp_trigger" if temp_trigger else ("latency_trigger" if latency_trigger else None)
-        released = not latency_trigger and (temp is None or temp < self.temp_release_c)
+        released = avg_latency <= self.latency_release_ms and (temp is None or temp < self.temp_release_c)
 
         self._trigger_streak = self._trigger_streak + 1 if triggered else 0
         self._clear_streak = self._clear_streak + 1 if released else 0
@@ -191,9 +195,32 @@ if __name__ == "__main__":
         slow.select_pair()
         assert slow.select_pair() == HIGH_ACCURACY  # cool and fast for 2 checks
 
+        # Latency hysteresis (the E4 frequency-cap case): a rolling mean just under the
+        # 1,300 ms engage threshold, but above the 1,235 ms release point, must not
+        # release - otherwise one fast gated slice in the window flips the tier back.
+        band = AdaptiveController(latency_threshold_ms=1300.0, temp_reader=lambda: 50.0, log_path=log_path)
+        assert band.latency_release_ms == 0.95 * 1300.0
+        for _ in range(5):
+            band.record_inference(1500)
+        band.select_pair()
+        assert band.select_pair() == LIGHTWEIGHT
+        for ms in (1298, 1290, 1270, 1250, 1240):
+            for _ in range(5):
+                band.record_inference(ms)
+            assert band.select_pair() == LIGHTWEIGHT and band.last_reason == "release_pending"
+        for _ in range(5):
+            band.record_inference(1150)
+        assert band.select_pair() == LIGHTWEIGHT and band.last_reason == "hysteresis_hold"
+        assert band.select_pair() == HIGH_ACCURACY
+
         try:
             AdaptiveController(temp_threshold_c=60.0, temp_release_c=65.0)
             raise AssertionError("release above engage must be rejected")
+        except ValueError:
+            pass
+        try:
+            AdaptiveController(latency_threshold_ms=1300.0, latency_release_ms=1400.0)
+            raise AssertionError("latency release above engage must be rejected")
         except ValueError:
             pass
 

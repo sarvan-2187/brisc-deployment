@@ -1,0 +1,4 @@
+run,mode,n,accuracy,workload_mean_ms,workload_median_ms,workload_p95_ms,segmented_mean_ms,fast_mean_ms,fast_path_count,temp_start_c,temp_mean_c,temp_peak_c,throttled_end,min_clock_hz,switches,pct_lightweight,peak_rss_mb,min_mem_available_mb,peak_swap_mb
+adaptive_rep1_20261015-234218,adaptive,20,0.95,242.5435,233.635,298.041,242.5435,,0,,,,,,0,0.0,,,
+static-H_rep1_20261015-234139,static-H,20,0.95,269.08050000000003,250.4,435.1485,269.08050000000003,,0,,,,,,0,0.0,,,
+static-L_rep1_20261015-234200,static-L,20,0.95,231.531,227.02,253.25750000000005,231.531,,0,,,,,,0,100.0,,,
